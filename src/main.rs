@@ -347,8 +347,6 @@ fn run_doom<'l>(mut cmdline: impl Iterator<Item = &'l str>) -> Result<(), Error>
             }
         })
         .collect::<Vec<_>>();
-    dbg!(&binary);
-    dbg!(&args);
     Command::new(binary)
         .args(args)
         .current_dir(binary_dir)
