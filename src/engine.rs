@@ -52,10 +52,13 @@ impl KnownEngines {
 
 pub(crate) fn read_known_engines() -> Result<KnownEngines, Error> {
     let engines_json_path = crate::doom_dir().map(|d| d.join("engines.json"))?;
-    println!("Searching for Doom engine definitions in {}", engines_json_path.to_string_lossy());
+    println!(
+        "Searching for Doom engine definitions in {}",
+        engines_json_path.to_string_lossy()
+    );
     if !engines_json_path.exists() {
         println!("Path not found, creating template. Please fill out this template.");
-        let mut f = File::create(&engines_json_path)?;
+        let mut f = File::create(&engines_json_path).map_err(Error::Io)?;
 
         use std::io::Write;
         write!(
@@ -73,14 +76,17 @@ pub(crate) fn read_known_engines() -> Result<KnownEngines, Error> {
                 ]
         "#}
             .trim()
-        )?;
+        )
+        .map_err(Error::Io)?;
     }
 
-    let engines: Vec<DoomEngine> = serde_json::from_reader(File::open(&engines_json_path)?)
-        .map_err(|error| Error::BadJson {
-            file: engines_json_path,
-            error,
-        })?;
+    let engines: Vec<DoomEngine> = serde_json::from_reader(
+        File::open(&engines_json_path).map_err(Error::Io)?,
+    )
+    .map_err(|error| Error::BadJson {
+        file: engines_json_path,
+        error,
+    })?;
     let engines: Vec<DoomEngine> = engines
         .into_iter()
         .map(|mut engine| {
@@ -91,6 +97,8 @@ pub(crate) fn read_known_engines() -> Result<KnownEngines, Error> {
         })
         .collect::<Result<_, _>>()?;
     println!("Found engines:");
-    engines.iter().for_each(|eng| println!("    {}", eng.aliases[0]));
+    engines
+        .iter()
+        .for_each(|eng| println!("    {}", eng.aliases[0]));
     Ok(KnownEngines::new(engines))
 }

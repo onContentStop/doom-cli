@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use std::fmt::Display;
 use std::fs::create_dir_all;
 use std::fs::File;
 use std::io;
@@ -14,8 +12,10 @@ use std::process::Command;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::channel;
+use std::sync::mpsc::RecvError;
 use std::thread::sleep;
 use std::time::Duration;
+use std::{collections::HashMap, sync::mpsc::SendError};
 
 use clap::App;
 use clap::AppSettings;
@@ -133,7 +133,7 @@ static DUMP_DIR: Lazy<PathBuf> = Lazy::new(|| PathBuf::from("E:").join("Videos")
 
 fn search_files(list: &[String], ty: FileType) -> Result<Vec<PathBuf>, Error> {
     list.iter()
-        .map(|i| {
+        .map(move |i| {
             search_file_in_dirs_by(PathBuf::from(i), ty.get_search_dirs()?, |p| {
                 ["wad", "deh", "bex", "pk3", "pk7", "pke", "zip"].contains(
                     &p.extension()
@@ -170,7 +170,7 @@ fn search_file_in_dirs_by(
         search_file_in_dirs_by(
             PathBuf::from(
                 name.file_stem()
-                    .ok_or_else(|| Error::NoFileStem(name.clone()))?,
+                    .ok_or_else(|| Error::NoFileStem(name.to_string_lossy().into_owned()))?,
             ),
             vec![parent],
             predicate,
@@ -185,7 +185,7 @@ fn search_file_in_dirs_by(
 
             let base_name = name
                 .file_stem()
-                .ok_or_else(|| Error::NoFileStem(name.clone()))?;
+                .ok_or_else(|| Error::NoFileStem(name.to_string_lossy().into_owned()))?;
             let extension = name.extension();
             let ancestors = name
                 .ancestors()
@@ -235,17 +235,17 @@ fn search_file_in_dirs_by(
                     .path()
                     .extension()
                     .map(|e| {
-                        e.to_str()
-                            .ok_or_else(|| Error::NonUtf8Path(entry.path().to_owned()))
+                        e.to_str().ok_or_else(|| {
+                            Error::NonUtf8Path(entry.path().to_string_lossy().into_owned())
+                        })
                     })
                     .transpose()?
                     .unwrap_or("");
 
                 let mut score = 0;
-                let stem = entry
-                    .path()
-                    .file_stem()
-                    .ok_or_else(|| Error::NoFileStem(entry.path().into()))?;
+                let stem = entry.path().file_stem().ok_or_else(|| {
+                    Error::NoFileStem(entry.path().to_string_lossy().into_owned())
+                })?;
                 let stems_eq = stem
                     .to_string_lossy()
                     .eq_ignore_ascii_case(base_name.to_string_lossy().as_ref());
@@ -306,7 +306,7 @@ fn search_file_in_dirs_by(
                 return Ok(results);
             }
         }
-        Err(Error::FileNotFound(name))
+        Err(Error::FileNotFound(name.to_string_lossy().into_owned()))
     }
 }
 
@@ -325,13 +325,13 @@ fn select_between<P: AsRef<Path>>(
         )
         .interact()
         .map(|indices| indices.iter().map(|i| options.as_ref()[*i].as_ref().to_owned()).collect())
-        .map_err(|e| e.into())
+        .map_err(Error::Io)
 }
 
 fn run_doom<'l>(mut cmdline: impl Iterator<Item = &'l str>) -> Result<(), Error> {
     let binary = PathBuf::from(cmdline.next().unwrap());
     if !binary.exists() {
-        return Err(Error::FileNotFound(binary));
+        return Err(Error::FileNotFound(binary.to_string_lossy().into_owned()));
     }
     let binary_dir = {
         let mut d = binary.clone();
@@ -388,7 +388,7 @@ fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(
             ).map_err(Error::Io)?;
             File::open(autoload_path).map_err(Error::OpeningFile)
         } else {
-            Err(e.into())
+            Err(Error::Io(e))
         }
     })?;
     let reader = BufReader::new(autoloads_file);
@@ -403,7 +403,9 @@ fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(
             engine
                 .as_ref()
                 .file_stem()
-                .unwrap()
+                .ok_or_else(|| {
+                    Error::NoFileStem(engine.as_ref().to_string_lossy().to_string().into())
+                })?
                 .to_string_lossy()
                 .as_ref(),
         )
@@ -421,7 +423,7 @@ fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(
 static CANCELLABLE: AtomicBool = AtomicBool::new(false);
 static PAUSED: AtomicBool = AtomicBool::new(false);
 
-fn run() -> Result<(), Error> {
+fn run<'s>() -> Result<(), Error> {
     let app = App::new("Command-line Doom launcher")
             .version("0.1.0")
             .before_help("This Doom launcher allows shortcuts to the many long-winded options that Doom engines accept.")
@@ -470,12 +472,18 @@ fn run() -> Result<(), Error> {
 
     let iwad_base = iwad_path
         .file_name()
-        .ok_or_else(|| Error::NoFileStem(iwad_path.clone()))
-        .and_then(|f| f.to_str().ok_or_else(|| Error::NonUtf8Path(f.into())))?;
+        .ok_or_else(|| Error::NoFileStem(iwad_path.to_string_lossy().into_owned()))
+        .and_then(|f| {
+            f.to_str()
+                .ok_or_else(|| Error::NonUtf8Path(f.to_string_lossy().into_owned()))
+        })?;
     let iwad_noext = iwad_path
         .file_stem()
-        .ok_or_else(|| Error::NoFileStem(iwad_path.clone()))
-        .and_then(|i| i.to_str().ok_or_else(|| Error::NonUtf8Path(i.into())))?
+        .ok_or_else(|| Error::NoFileStem(iwad_path.to_string_lossy().into_owned()))
+        .and_then(|i| {
+            i.to_str()
+                .ok_or_else(|| Error::NonUtf8Path(i.to_string_lossy().into_owned()))
+        })?
         .to_lowercase();
 
     let mut cmdline = CommandLine::new();
@@ -486,7 +494,7 @@ fn run() -> Result<(), Error> {
         engine
             .binary
             .to_str()
-            .ok_or_else(|| Error::NonUtf8Path(engine.binary.clone()))?,
+            .ok_or_else(|| Error::NonUtf8Path(engine.binary.to_string_lossy().into_owned()))?,
         0,
     ));
     if matches.is_present("debug") {
@@ -556,8 +564,12 @@ fn run() -> Result<(), Error> {
                     .iter()
                     .map(|p| {
                         p.file_stem()
-                            .ok_or_else(|| Error::NoFileStem(p.to_owned()))
-                            .and_then(|p| p.to_str().ok_or_else(|| Error::NonUtf8Path(p.into())))
+                            .ok_or_else(|| Error::NoFileStem(p.to_string_lossy().into_owned()))
+                            .and_then(|p| {
+                                p.to_str().ok_or_else(|| {
+                                    Error::NonUtf8Path(p.to_string_lossy().into_owned())
+                                })
+                            })
                             .map(|p| p.to_owned())
                     })
                     .collect::<Result<Vec<_>, _>>()?,
@@ -567,8 +579,11 @@ fn run() -> Result<(), Error> {
         for pwad in arg_pwads {
             match pwad
                 .extension()
-                .ok_or_else(|| Error::NoFileExtension(pwad.clone()))
-                .and_then(|ext| ext.to_str().ok_or_else(|| Error::NonUtf8Path(ext.into())))?
+                .ok_or_else(|| Error::NoFileExtension(pwad.to_string_lossy().into_owned()))
+                .and_then(|ext| {
+                    ext.to_str()
+                        .ok_or_else(|| Error::NonUtf8Path(ext.to_string_lossy().into_owned()))
+                })?
                 .to_lowercase()
                 .as_str()
             {
@@ -599,7 +614,7 @@ fn run() -> Result<(), Error> {
         cmdline.push_line(Line::from_word("-file", 1));
         pwads.wads().iter().try_for_each(|pwad| {
             pwad.to_str()
-                .ok_or_else(|| Error::NonUtf8Path(pwad.clone()))
+                .ok_or_else(|| Error::NonUtf8Path(pwad.to_string_lossy().into_owned()))
                 .map(|pwad| cmdline.push_line(Line::from_word(pwad, 2)))
         })?;
     }
@@ -608,7 +623,7 @@ fn run() -> Result<(), Error> {
         cmdline.push_line(Line::from_word("-deh", 1));
         pwads.dehs().iter().try_for_each(|deh| {
             deh.to_str()
-                .ok_or_else(|| Error::NonUtf8Path(deh.into()))
+                .ok_or_else(|| Error::NonUtf8Path(deh.to_string_lossy().into_owned()))
                 .map(|deh| cmdline.push_line(Line::from_word(deh, 2)))
         })?;
     }
@@ -667,7 +682,7 @@ fn run() -> Result<(), Error> {
         cmdline.push_line(Line::from_word(
             demo[0]
                 .to_str()
-                .ok_or_else(|| Error::NonUtf8Path(demo[0].clone()))?,
+                .ok_or_else(|| Error::NonUtf8Path(demo[0].to_string_lossy().into_owned()))?,
             2,
         ));
     }
@@ -724,12 +739,12 @@ fn run() -> Result<(), Error> {
                 let video_name = if dump_dir.exists() {
                     Ok(())
                 } else {
-                    create_dir_all(&dump_dir).map_err(|e| e.into())
+                    create_dir_all(&dump_dir).map_err(Error::Io)
                 }
                 .and_then(|_| {
                     demo_name
                         .file_stem()
-                        .ok_or_else(|| Error::NoFileStem(demo_name.clone()))
+                        .ok_or_else(|| Error::NoFileStem(demo_name.to_string_lossy().into_owned()))
                 })
                 .map(|viddump_filename| {
                     dump_dir.join({
@@ -738,11 +753,20 @@ fn run() -> Result<(), Error> {
                         viddump_filename
                     })
                 });
-                video_name.map(|video_name| Job {
-                    name: demo_name.file_stem().unwrap().to_str().unwrap().to_string(),
-                    video_name,
-                    demo_name,
-                })
+                video_name.map(|video_name| -> Result<Job, Error> {
+                    Ok(Job {
+                        name: demo_name
+                            .file_stem()
+                            .ok_or_else(|| {
+                                Error::NoFileStem(demo_name.to_string_lossy().into_owned())
+                            })?
+                            .to_str()
+                            .unwrap()
+                            .to_string(),
+                        video_name,
+                        demo_name,
+                    })
+                })?
             })
             .collect::<Result<Vec<_>, _>>()?
     } else {
@@ -759,8 +783,8 @@ fn run() -> Result<(), Error> {
     if renderings.is_empty() {
         println!("Command line: \n'\n{}'", cmdline);
         print!("Press enter to launch Doom.");
-        stdout().flush().unwrap();
-        stdin().read_line(&mut String::new()).unwrap();
+        stdout().flush().map_err(Error::Io)?;
+        stdin().read_line(&mut String::new()).map_err(Error::Io)?;
         run_doom(cmdline.iter_words())?;
     }
     let (job_sender, job_receiver) = channel::<Result<Job, Error>>();
@@ -770,7 +794,9 @@ fn run() -> Result<(), Error> {
             PAUSED.store(true, Ordering::SeqCst);
             let mut extra_demos = String::new();
             print!("Enter demo names, separated by spaces: ");
-            stdout().flush().unwrap();
+            stdout()
+                .flush()
+                .unwrap_or_else(|e| job_sender.send(Err(Error::Io(e))).unwrap());
             stdin().read_line(&mut extra_demos).unwrap();
 
             if extra_demos.split_whitespace().next().is_none() {
@@ -785,7 +811,9 @@ fn run() -> Result<(), Error> {
                     d.into_iter().flatten().try_for_each(|demo_name| {
                         let name = demo_name
                             .file_stem()
-                            .ok_or_else(|| Error::NoFileStem(demo_name.clone()))
+                            .ok_or_else(|| {
+                                Error::NoFileStem(demo_name.to_string_lossy().into_owned())
+                            })
                             .map(|name| name.to_owned());
                         name.and_then(|name| {
                             let video_name = dump_dir.join({
@@ -796,14 +824,18 @@ fn run() -> Result<(), Error> {
                             job_sender
                                 .send(
                                     name.to_str()
-                                        .ok_or_else(|| Error::NonUtf8Path(name.as_os_str().into()))
+                                        .ok_or_else(|| {
+                                            Error::NonUtf8Path(
+                                                name.as_os_str().to_string_lossy().into_owned(),
+                                            )
+                                        })
                                         .map(|name| Job {
                                             name: name.to_owned(),
                                             demo_name: demo_name.clone(),
                                             video_name,
                                         }),
                                 )
-                                .map_err(|e| Error::Send(e.to_string()))
+                                .map_err(|e| Error::Send(Box::new(e)))
                         })
                     })
                 });
@@ -815,7 +847,7 @@ fn run() -> Result<(), Error> {
                         demo_name: PathBuf::new(),
                         video_name: PathBuf::new(),
                     }))
-                    .unwrap();
+                    .unwrap_or_else(|e| job_sender.send(Err(Error::Send(Box::new(e)))).unwrap());
             }
 
             PAUSED.store(false, Ordering::SeqCst);
@@ -833,9 +865,9 @@ fn run() -> Result<(), Error> {
         for job in &renderings {
             println!(
                 "{}  ==>  {}",
-                job.demo_name
-                    .to_str()
-                    .ok_or_else(|| Error::NonUtf8Path(job.demo_name.clone()))?,
+                job.demo_name.to_str().ok_or_else(|| Error::NonUtf8Path(
+                    job.demo_name.to_string_lossy().into_owned()
+                ))?,
                 job.name
             );
         }
@@ -846,17 +878,17 @@ fn run() -> Result<(), Error> {
             let mut rcmdline = cmdline.clone();
             rcmdline.push_line(Line::from_word("-timedemo", 1));
             rcmdline.push_line(Line::from_word(
-                job.demo_name
-                    .to_str()
-                    .ok_or_else(|| Error::NonUtf8Path(job.demo_name.clone()))?,
+                job.demo_name.to_str().ok_or_else(|| {
+                    Error::NonUtf8Path(job.demo_name.to_string_lossy().into_owned())
+                })?,
                 2,
             ));
 
             rcmdline.push_line(Line::from_word("-viddump", 1));
             rcmdline.push_line(Line::from_word(
-                job.video_name
-                    .to_str()
-                    .ok_or_else(|| Error::NonUtf8Path(job.video_name.clone()))?,
+                job.video_name.to_str().ok_or_else(|| {
+                    Error::NonUtf8Path(job.video_name.to_string_lossy().into_owned())
+                })?,
                 2,
             ));
             rcmdline
@@ -868,14 +900,14 @@ fn run() -> Result<(), Error> {
                 prompt += "batch ";
             }
             print!("{}rendering.", prompt);
-            stdout().flush().unwrap();
-            stdin().read_line(&mut String::new()).unwrap();
+            stdout().flush().map_err(Error::Io)?;
+            stdin().read_line(&mut String::new()).map_err(Error::Io)?;
         } else {
             CANCELLABLE.store(true, Ordering::SeqCst);
             println!("Continuing batch rendering in 10 seconds. Press <C-c> to add more demos to the queue.");
             sleep(Duration::from_secs(10));
             if PAUSED.load(Ordering::SeqCst) {
-                unpause_receiver.recv().unwrap();
+                unpause_receiver.recv()?;
             }
             CANCELLABLE.store(false, Ordering::SeqCst);
             for job in job_receiver.try_iter() {
@@ -897,101 +929,39 @@ fn main() {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 enum Error {
+    #[error("'{file} contains bad JSON: {error}")]
     BadJson {
         file: PathBuf,
         error: serde_json::Error,
     },
+    #[error("creating autoloads file in your Doom directory: {0}")]
     CreatingAutoloadsFile(io::Error),
-    FileNotFound(PathBuf),
-    Fmt(std::fmt::Error),
+    #[error("file not found: '{0}'")]
+    FileNotFound(String),
+    #[error("formatter error: {0}")]
+    Fmt(#[from] std::fmt::Error),
+    #[error("Home directory not found (!)")]
     Homeless,
+    #[error("I/O error: {0}")]
     Io(io::Error),
-    NoFileExtension(PathBuf),
-    NoFileStem(PathBuf),
+    #[error("no file extension in '{0}'")]
+    NoFileExtension(String),
+    #[error("no file stem in '{0}'")]
+    NoFileStem(String),
+    #[error("attempting to open a file: {0}")]
     OpeningFile(io::Error),
+    #[error("receiving from interrupt handler: {0}")]
+    Recv(#[from] RecvError),
+    #[error("could not run Doom: {0}")]
     RunningDoom(io::Error),
-    Send(String),
+    #[error("sending to interrupt handler: {0}")]
+    Send(Box<SendError<Result<Job, Error>>>),
+    #[error("handling interrupt: {0}")]
     SignalHandler(ctrlc::Error),
-    NonUtf8Path(PathBuf),
-    WalkDir(walkdir::Error),
+    #[error("non-UTF-8 path: '{0}'")]
+    NonUtf8Path(String),
+    #[error("walking directory: {0}")]
+    WalkDir(#[from] walkdir::Error),
 }
-
-impl From<io::Error> for Error {
-    fn from(i: io::Error) -> Self {
-        Self::Io(i)
-    }
-}
-
-impl From<std::fmt::Error> for Error {
-    fn from(f: std::fmt::Error) -> Self {
-        Self::Fmt(f)
-    }
-}
-
-impl From<walkdir::Error> for Error {
-    fn from(w: walkdir::Error) -> Self {
-        Self::WalkDir(w)
-    }
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::BadJson { file, error } => {
-                write!(
-                    f,
-                    "'{}' contains bad JSON: {}",
-                    file.to_string_lossy(),
-                    error
-                )
-            }
-            Self::FileNotFound(path) => {
-                write!(f, "file not found: '{}'", path.to_string_lossy())
-            }
-            Self::Fmt(err) => {
-                write!(f, "formatter error: {}", err)
-            }
-            Self::Homeless => {
-                write!(f, "you have no home :(")
-            }
-            Self::Io(err) => {
-                write!(f, "I/O error: {}", err)
-            }
-            Self::NoFileExtension(path) => {
-                write!(f, "no file extension in '{}'", path.to_string_lossy())
-            }
-            Self::NoFileStem(path) => {
-                write!(f, "no file stem in '{}'", path.to_string_lossy())
-            }
-            Self::NonUtf8Path(path) => {
-                write!(
-                    f,
-                    "The path '{}' is not valid UTF-8",
-                    path.to_string_lossy()
-                )
-            }
-            Self::RunningDoom(err) => {
-                write!(f, "could not run Doom: {}", err)
-            }
-            Self::SignalHandler(err) => {
-                write!(f, "could not create signal handler: {}", err)
-            }
-            Self::WalkDir(err) => {
-                write!(f, "walking directory: {}", err)
-            }
-            Error::CreatingAutoloadsFile(err) => {
-                write!(f, "creating autoloads.json in your Doom directory: {}", err)
-            }
-            Error::Send(err) => {
-                write!(f, "attempting to send to job handler: {}", err)
-            }
-            Error::OpeningFile(err) => {
-                write!(f, "attempting to open a file: {}", err)
-            }
-        }
-    }
-}
-
-impl std::error::Error for Error {}
