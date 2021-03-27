@@ -21,6 +21,7 @@ use clap::App;
 use clap::AppSettings;
 use clap::Arg;
 use dialoguer::MultiSelect;
+use indoc::indoc;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
@@ -370,20 +371,20 @@ fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(
                 File::create(&autoload_path).map_err(|e| {
                     Error::CreatingAutoloadsFile(e)
                 })?,
-                r#"
-{{
-    "_comment": "Place in 'universal' those PWADs that you always want to load.",
-    "universal": [],
-    "iwad": {{
-        "_comment": ["Place in here those PWADs that only load under a specific IWAD. The key should be the IWAD, and the value the names of the PWADs."],
-        "_example": ["foo.wad", "bar.pk3", "baz.zip"]
-    }},
-    "sourceport": {{
-        "_comment": ["Place in here those PWADs that only load under a specific sourceport. The key should be the sourceport, and the value should be the PWADs."],
-        "_example": ["foo.wad", "bar.pk3", "baz.zip"]
-    }}
-}}
-            "#
+                indoc! {r#"
+                    {{
+                        "_comment": "Place in 'universal' those PWADs that you always want to load.",
+                        "universal": [],
+                        "iwad": {{
+                            "_comment": ["Place in here those PWADs that only load under a specific IWAD. The key should be the IWAD, and the value the names of the PWADs."],
+                            "_example": ["foo.wad", "bar.pk3", "baz.zip"]
+                        }},
+                        "sourceport": {{
+                            "_comment": ["Place in here those PWADs that only load under a specific sourceport. The key should be the sourceport, and the value should be the PWADs."],
+                            "_example": ["foo.wad", "bar.pk3", "baz.zip"]
+                        }}
+                    }}
+            "#},
             ).map_err(Error::Io)?;
             File::open(autoload_path).map_err(Error::OpeningFile)
         } else {

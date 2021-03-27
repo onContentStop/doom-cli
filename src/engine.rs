@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::path::PathBuf;
 
+use indoc::indoc;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -60,17 +61,17 @@ pub(crate) fn read_known_engines() -> Result<KnownEngines, Error> {
         write!(
             f,
             "{}",
-            r#"
-[
-    {
-        "aliases": ["example", "ex"],
-        "binary": "/dev/null",
-        "kind": "Vanilla",
-        "supports_widescreen_assets": false,
-        "required_args": []
-    }
-]
-        "#
+            indoc! {r#"
+                [
+                    {
+                        "aliases": ["example", "ex"],
+                        "binary": "/dev/null",
+                        "kind": "Vanilla",
+                        "supports_widescreen_assets": false,
+                        "required_args": []
+                    }
+                ]
+        "#}
             .trim()
         )?;
     }
