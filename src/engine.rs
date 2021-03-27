@@ -63,11 +63,11 @@ pub(crate) fn read_known_engines() -> Result<KnownEngines, Error> {
             r#"
 [
     {
-        "aliases": ["example", "ex"]
+        "aliases": ["example", "ex"],
         "binary": "/dev/null",
         "kind": "Vanilla",
         "supports_widescreen_assets": false,
-        "required_args: []
+        "required_args": []
     }
 ]
         "#
