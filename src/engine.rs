@@ -9,7 +9,7 @@ use serde::Serialize;
 use crate::util::absolute_path;
 use crate::Error;
 
-#[derive(Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, PartialEq, Eq, Clone, Copy)]
 pub(crate) enum DoomEngineKind {
     Vanilla,
     Boom,
@@ -18,7 +18,7 @@ pub(crate) enum DoomEngineKind {
     ZDoom,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 pub(crate) struct DoomEngine {
     aliases: Vec<String>,
     pub binary: PathBuf,
@@ -30,6 +30,18 @@ pub(crate) struct DoomEngine {
 pub(crate) struct KnownEngines {
     keys: HashMap<String, usize>,
     engines: Vec<DoomEngine>,
+}
+
+pub(crate) struct KnownEnginesIterator {
+    iter: Box<dyn Iterator<Item = String>>,
+}
+
+impl Iterator for KnownEnginesIterator {
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
 }
 
 impl KnownEngines {
@@ -47,6 +59,18 @@ impl KnownEngines {
     pub fn get(&self, alias: &str) -> Option<&DoomEngine> {
         let index = *self.keys.get(alias)?;
         Some(&self.engines[index])
+    }
+
+    pub fn iter<'k>(&'k self) -> KnownEnginesIterator {
+        let engines = self.engines.clone();
+        KnownEnginesIterator {
+            iter: Box::new(
+                engines
+                    .into_iter()
+                    .map(|e| e.aliases)
+                    .flat_map(|ss| ss.into_iter()),
+            ),
+        }
     }
 }
 

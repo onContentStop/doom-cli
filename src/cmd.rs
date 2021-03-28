@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 #[derive(Debug, Clone)]
 pub(crate) struct CommandLine {
     lines: Vec<Line>,
@@ -22,14 +20,9 @@ impl CommandLine {
     pub fn iter_words(&self) -> impl Iterator<Item = &str> {
         self.lines.iter().map(|line| line.iter()).flatten()
     }
-}
 
-impl Display for CommandLine {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for line in &self.lines {
-            writeln!(f, "{}", line)?;
-        }
-        Ok(())
+    pub fn iter_lines(&self) -> impl Iterator<Item = &Line> {
+        self.lines.iter()
     }
 }
 
@@ -72,12 +65,6 @@ impl Line {
     }
 }
 
-impl Display for Line {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.words.join(" "))
-    }
-}
-
 pub(crate) struct LineIterator<'l> {
     line: &'l Line,
     index: usize,
@@ -85,6 +72,21 @@ pub(crate) struct LineIterator<'l> {
 
 impl<'l> Iterator for LineIterator<'l> {
     type Item = &'l str;
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.line.words.get(n).map(|s| s.as_str())
+    }
+
+    fn fold<B, F>(mut self, mut init: B, mut f: F) -> B
+    where
+        Self: Sized,
+        F: FnMut(B, Self::Item) -> B,
+    {
+        while let Some(n) = self.next() {
+            init = f(init, n);
+        }
+        init
+    }
 
     fn next(&mut self) -> Option<Self::Item> {
         let value = self.line.words.get(self.index);

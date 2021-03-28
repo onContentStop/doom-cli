@@ -20,7 +20,7 @@ use std::{collections::HashMap, sync::mpsc::SendError};
 use clap::App;
 use clap::AppSettings;
 use clap::Arg;
-use dialoguer::MultiSelect;
+use dialoguer::{theme::ColorfulTheme, Confirm, Input, MultiSelect};
 use indoc::indoc;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -454,19 +454,65 @@ fn run<'s>() -> Result<(), Error> {
 
     let matches = app.get_matches();
 
-    let engine_name = matches.value_of("engine").unwrap_or("prboom-pp");
+    if !doom_dir()?.exists() {
+        let answer = Confirm::with_theme(&ColorfulTheme::default())
+            .with_prompt(format!(
+                "You don't have a dedicated Doom directory at {}. Create it?",
+                doom_dir()?.to_string_lossy()
+            ))
+            .interact()
+            .map_err(Error::Io)?;
+        if answer {
+            create_dir_all(doom_dir()?).map_err(Error::Io)?;
+            println!("Success.");
+        } else {
+            println!("Cannot continue. You can set the dedicated Doom directory by passing the flag --doom-dir. You only have to pass the flag once, as it will be remembered.");
+            return Ok(());
+        }
+    }
+
     let known_engines = read_known_engines()?;
-    let engine = &known_engines.get(engine_name).unwrap_or_else(|| {
+    let engine_name = matches
+        .value_of("engine")
+        .map(|s| s.to_owned())
+        .or_else(|| known_engines.iter().next())
+        .ok_or(Error::NoEngines)?;
+    let engine = &known_engines.get(&engine_name).unwrap_or_else(|| {
         eprintln!("ERROR: Unknown sourceport '{}'", engine_name);
         exit(-1);
     });
 
-    let chosen_iwad = matches.value_of("iwad").unwrap_or("doom2");
-    let iwad_path = search_file(chosen_iwad, FileType::Iwad)?;
-    if iwad_path.is_empty() {
-        eprintln!("IWAD not found: '{}'", chosen_iwad);
+    let mut search_iwads: Box<dyn Iterator<Item = String>> = matches
+        .value_of("iwad")
+        .map::<Box<dyn Iterator<Item = String>>, _>(|i| Box::new(std::iter::once(i.to_string())))
+        .unwrap_or(Box::new(
+            ["DOOM2.WAD", "DOOM.WAD", "DOOMU.WAD", "DOOM1.WAD"]
+                .iter()
+                .map(|i: &&str| i.to_string()),
+        ));
+    let iwad_path = loop {
+        let iwad = match search_iwads.next() {
+            Some(i) => i,
+            None => break None,
+        };
+        let iwad_path = search_file(&iwad, FileType::Iwad).or_else(|e| {
+            if let Error::FileNotFound(_) = e {
+                Ok(vec![])
+            } else {
+                Err(e)
+            }
+        })?;
+        if iwad_path.is_empty() {
+            eprintln!("IWAD not found: '{}'", iwad);
+        } else {
+            break Some(iwad_path);
+        }
+    };
+    if iwad_path.is_none() {
+        eprintln!("No IWADs could be found.");
         exit(-1);
     }
+    let iwad_path = iwad_path.unwrap();
     let iwad_path = absolute_path(&iwad_path[0])?;
     let iwad = iwad_path.to_string_lossy().to_string();
 
@@ -781,7 +827,10 @@ fn run<'s>() -> Result<(), Error> {
 
     println!();
     if renderings.is_empty() {
-        println!("Command line: \n'\n{}'", cmdline);
+        println!(
+            "Command line: \n'\n{}'",
+            cmdline.iter_lines().map(|l| l.iter().join(" ")).join("\n")
+        );
         print!("Press enter to launch Doom.");
         stdout().flush().map_err(Error::Io)?;
         stdin().read_line(&mut String::new()).map_err(Error::Io)?;
@@ -792,12 +841,14 @@ fn run<'s>() -> Result<(), Error> {
     ctrlc::set_handler(move || {
         if CANCELLABLE.load(Ordering::Relaxed) {
             PAUSED.store(true, Ordering::SeqCst);
-            let mut extra_demos = String::new();
-            print!("Enter demo names, separated by spaces: ");
-            stdout()
-                .flush()
-                .unwrap_or_else(|e| job_sender.send(Err(Error::Io(e))).unwrap());
-            stdin().read_line(&mut extra_demos).unwrap();
+            let extra_demos = Input::with_theme(&ColorfulTheme::default())
+                .with_prompt("Enter demo names, separated by spaces: ")
+                .allow_empty(true)
+                .interact_text()
+                .unwrap_or_else(|e| {
+                    job_sender.send(Err(Error::Io(e))).unwrap();
+                    String::new()
+                });
 
             if extra_demos.split_whitespace().next().is_none() {
                 println!("You didn't enter any demo names.");
@@ -893,7 +944,14 @@ fn run<'s>() -> Result<(), Error> {
             ));
             rcmdline
         };
-        println!("Command line #{}: \n'\n{}'", i, render_cmdline);
+        println!(
+            "Command line #{}: \n'\n{}'",
+            i,
+            render_cmdline
+                .iter_lines()
+                .map(|l| l.iter().join(" "))
+                .join("\n")
+        );
         if i == 1 {
             let mut prompt = String::from("Press enter to begin ");
             if !renderings.is_empty() {
@@ -946,6 +1004,8 @@ enum Error {
     Homeless,
     #[error("I/O error: {0}")]
     Io(io::Error),
+    #[error("no engines defined")]
+    NoEngines,
     #[error("no file extension in '{0}'")]
     NoFileExtension(String),
     #[error("no file stem in '{0}'")]
