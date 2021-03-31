@@ -832,7 +832,7 @@ fn run<'s>() -> Result<(), Error> {
     println!();
     if renderings.is_empty() {
         println!(
-            "Command line: \n'\n{}'",
+            "Command line: \n'\n{}\n'",
             cmdline.iter_lines().map(|l| l.iter().join(" ")).join("\n")
         );
         print!("Press enter to launch Doom.");
@@ -949,7 +949,7 @@ fn run<'s>() -> Result<(), Error> {
             rcmdline
         };
         println!(
-            "Command line #{}: \n'\n{}'",
+            "Command line #{}: \n'\n{}\n'",
             i,
             render_cmdline
                 .iter_lines()
