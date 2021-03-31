@@ -3,7 +3,6 @@ use std::fs::File;
 use std::io;
 use std::io::stdin;
 use std::io::stdout;
-use std::io::BufReader;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
@@ -86,11 +85,9 @@ enum FileType {
 
 impl FileType {
     fn get_search_dirs(&self) -> Result<Vec<PathBuf>, Error> {
-        match self {
-            FileType::Iwad => vec![doom_dir()].into_iter().collect(),
-            FileType::Pwad => vec![doom_dir()].into_iter().collect(),
-            FileType::Demo => vec![doom_dir()].into_iter().collect(),
-        }
+        vec![doom_dir(), Ok(public_doom_dir())]
+            .into_iter()
+            .collect()
     }
 }
 
@@ -105,6 +102,10 @@ fn home_dir() -> Result<PathBuf, Error> {
 
 fn doom_dir() -> Result<PathBuf, Error> {
     home_dir().map(|h| h.join("doom"))
+}
+
+fn public_doom_dir() -> PathBuf {
+    PathBuf::from("/public/doom")
 }
 
 fn demo_dir() -> Result<PathBuf, Error> {
@@ -364,35 +365,38 @@ struct Autoloads {
 }
 
 fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(), Error> {
-    let autoload_path = doom_dir()?.join("autoloads.json");
-    let autoloads_file = File::open(&autoload_path).or_else(|e| {
+    let autoload_path = doom_dir()?.join("autoloads.toml");
+    File::open(&autoload_path).or_else(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             write!(
                 File::create(&autoload_path).map_err(|e| {
                     Error::CreatingAutoloadsFile(e)
                 })?,
                 indoc! {r#"
-                    {{
-                        "_comment": "Place in 'universal' those PWADs that you always want to load.",
-                        "universal": [],
-                        "iwad": {{
-                            "_comment": ["Place in here those PWADs that only load under a specific IWAD. The key should be the IWAD, and the value the names of the PWADs."],
-                            "_example": ["foo.wad", "bar.pk3", "baz.zip"]
-                        }},
-                        "sourceport": {{
-                            "_comment": ["Place in here those PWADs that only load under a specific sourceport. The key should be the sourceport, and the value should be the PWADs."],
-                            "_example": ["foo.wad", "bar.pk3", "baz.zip"]
-                        }}
-                    }}
-            "#},
+                    # Place in 'universal' those PWADs that you always want to load.
+                    universal = []
+                    [iwad]
+                    # Place in here those PWADs that only load under a specific IWAD. The key should be the IWAD, and the value the names of the PWADs.
+                    example = ["foo.wad", "bar.pk3", "baz.zip"]
+                    [sourceport]
+                    # Place in here those PWADs that only load under a specific sourceport. The key should be the sourceport, and the value should be the PWADs.
+                    example = ["foo.wad", "bar.pk3", "baz.zip"]
+                "#},
             ).map_err(Error::Io)?;
-            File::open(autoload_path).map_err(Error::OpeningFile)
+            File::open(autoload_path.as_path()).map_err(Error::OpeningFile)
         } else {
             Err(Error::Io(e))
         }
     })?;
-    let reader = BufReader::new(autoloads_file);
-    let autoloads: Autoloads = serde_json::from_reader(reader).unwrap();
+    let autoloads: Autoloads = toml::from_slice(
+        std::fs::read(autoload_path.as_path())
+            .map_err(Error::Io)?
+            .as_slice(),
+    )
+    .map_err(|e| Error::BadToml {
+        file: autoload_path.clone(),
+        error: e,
+    })?;
 
     let universal_pwads = search_files(&autoloads.universal, FileType::Pwad)?;
     pwads.add_wads(universal_pwads);
@@ -989,10 +993,10 @@ fn main() {
 
 #[derive(Debug, thiserror::Error)]
 enum Error {
-    #[error("'{file} contains bad JSON: {error}")]
-    BadJson {
+    #[error("'{file}' contains bad TOML: {error}")]
+    BadToml {
         file: PathBuf,
-        error: serde_json::Error,
+        error: toml::de::Error,
     },
     #[error("creating autoloads file in your Doom directory: {0}")]
     CreatingAutoloadsFile(io::Error),

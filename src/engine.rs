@@ -6,6 +6,25 @@ use indoc::indoc;
 use serde::Deserialize;
 use serde::Serialize;
 
+const EXAMPLE_ENGINES_FILE: &str = indoc!(
+    r#"
+    # This header should be the canonical name of your engine.
+    [example]
+    # Put here any aliases that you want to use with the -e option.
+    aliases = ["example", "ex"]
+    # Path to the binary.
+    binary = "/dev/zero"
+    # What compatibility levels does this engine support?
+    # Valid values: ["Vanilla", "Boom", "MBF", "Eternity", "ZDoom"]
+    kind = "Vanilla"
+    # Does this engine support the official Doom widescreen assets?
+    # Most engines don't, so if you don't know then put false here.
+    supports_widescreen_assets = false
+    # Are there any extra arguments that this engine needs in all cases?
+    required_args = []
+    "#
+);
+
 use crate::util::absolute_path;
 use crate::Error;
 
@@ -28,7 +47,7 @@ pub(crate) struct DoomEngine {
 }
 
 pub(crate) struct KnownEngines {
-    keys: HashMap<String, usize>,
+    alias_map: HashMap<String, usize>,
     engines: Vec<DoomEngine>,
 }
 
@@ -45,19 +64,22 @@ impl Iterator for KnownEnginesIterator {
 }
 
 impl KnownEngines {
-    pub fn new(engines: Vec<DoomEngine>) -> Self {
-        Self {
-            keys: engines
-                .iter()
-                .enumerate()
-                .flat_map(|(i, e)| e.aliases.iter().map(move |a| (a.clone(), i)))
-                .collect(),
-            engines,
+    pub fn new(engine_map: HashMap<String, DoomEngine>) -> Self {
+        let mut alias_map = HashMap::new();
+        let mut engines = Vec::new();
+        for (name, eng) in engine_map {
+            let i = engines.len();
+            alias_map.insert(name, i);
+            for alias in eng.aliases.iter() {
+                alias_map.insert(alias.clone(), i);
+            }
+            engines.push(eng);
         }
+        Self { alias_map, engines }
     }
 
-    pub fn get(&self, alias: &str) -> Option<&DoomEngine> {
-        let index = *self.keys.get(alias)?;
+    pub fn get(&self, name: &str) -> Option<&DoomEngine> {
+        let index = *self.alias_map.get(name)?;
         Some(&self.engines[index])
     }
 
@@ -75,7 +97,7 @@ impl KnownEngines {
 }
 
 pub(crate) fn read_known_engines() -> Result<KnownEngines, Error> {
-    let engines_json_path = crate::doom_dir().map(|d| d.join("engines.json"))?;
+    let engines_json_path = crate::doom_dir()?.join("engines.toml");
     println!(
         "Searching for Doom engine definitions in {}",
         engines_json_path.to_string_lossy()
@@ -85,44 +107,26 @@ pub(crate) fn read_known_engines() -> Result<KnownEngines, Error> {
         let mut f = File::create(&engines_json_path).map_err(Error::Io)?;
 
         use std::io::Write;
-        write!(
-            f,
-            "{}",
-            indoc! {r#"
-                [
-                    {
-                        "aliases": ["example", "ex"],
-                        "binary": "/dev/null",
-                        "kind": "Vanilla",
-                        "supports_widescreen_assets": false,
-                        "required_args": []
-                    }
-                ]
-        "#}
-            .trim()
-        )
-        .map_err(Error::Io)?;
+        write!(f, "{}", EXAMPLE_ENGINES_FILE).map_err(Error::Io)?;
     }
 
-    let engines: Vec<DoomEngine> = serde_json::from_reader(
-        File::open(&engines_json_path).map_err(Error::Io)?,
+    let engines: HashMap<String, DoomEngine> = toml::from_slice(
+        &std::fs::read(engines_json_path.as_path()).map_err(Error::Io)?,
     )
-    .map_err(|error| Error::BadJson {
+    .map_err(|error| Error::BadToml {
         file: engines_json_path,
         error,
     })?;
-    let engines: Vec<DoomEngine> = engines
+    let engines: HashMap<String, DoomEngine> = engines
         .into_iter()
-        .map(|mut engine| {
+        .map(|(name, mut engine)| {
             absolute_path(engine.binary.clone()).map(|binary| {
                 engine.binary = binary;
-                engine
+                (name, engine)
             })
         })
         .collect::<Result<_, _>>()?;
     println!("Found engines:");
-    engines
-        .iter()
-        .for_each(|eng| println!("    {}", eng.aliases[0]));
+    engines.keys().for_each(|eng| println!("    {}", eng));
     Ok(KnownEngines::new(engines))
 }
