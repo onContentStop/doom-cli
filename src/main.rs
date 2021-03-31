@@ -1,8 +1,7 @@
+use std::collections::HashMap;
 use std::fs::create_dir_all;
 use std::fs::File;
 use std::io;
-use std::io::stdin;
-use std::io::stdout;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
@@ -12,16 +11,24 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::RecvError;
+use std::sync::mpsc::SendError;
 use std::thread::sleep;
 use std::time::Duration;
-use std::{collections::HashMap, sync::mpsc::SendError};
 
 use clap::App;
 use clap::AppSettings;
 use clap::Arg;
-use dialoguer::{theme::ColorfulTheme, Confirm, Input, MultiSelect};
+use dialoguer::console::style;
+use dialoguer::theme::ColorfulTheme;
+use dialoguer::Confirm;
+use dialoguer::Input;
+use dialoguer::MultiSelect;
 use indoc::indoc;
 use itertools::Itertools;
+use log::error;
+use log::info;
+use log::trace;
+use log::warn;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use serde::Serialize;
@@ -123,7 +130,7 @@ static DUMP_DIR: Lazy<PathBuf> = Lazy::new(|| {
     )
     .unwrap();
     let second_line = raw_output.lines().nth(1).unwrap_or_else(|| {
-        eprintln!("Please mount /dev/sdd1. I beg you.");
+        error!("Please mount /dev/sdd1. I beg you.");
         exit(-1);
     });
     second_line.split_whitespace().next().unwrap().into()
@@ -178,7 +185,7 @@ fn search_file_in_dirs_by(
         )
     } else {
         for search_dir in search_dirs {
-            println!(
+            info!(
                 "Searching for '{}' in '{}'",
                 name.to_string_lossy(),
                 search_dir.to_string_lossy()
@@ -296,7 +303,7 @@ fn search_file_in_dirs_by(
                     .map(|r| r.path)
                     .rev()
                     .collect::<Vec<_>>();
-                println!(
+                trace!(
                     "Results: [{}]",
                     results
                         .iter()
@@ -407,9 +414,7 @@ fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(
             engine
                 .as_ref()
                 .file_stem()
-                .ok_or_else(|| {
-                    Error::NoFileStem(engine.as_ref().to_string_lossy().to_string().into())
-                })?
+                .ok_or_else(|| Error::NoFileStem(engine.as_ref().to_string_lossy().to_string()))?
                 .to_string_lossy()
                 .as_ref(),
         )
@@ -427,11 +432,12 @@ fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(
 static CANCELLABLE: AtomicBool = AtomicBool::new(false);
 static PAUSED: AtomicBool = AtomicBool::new(false);
 
-fn run<'s>() -> Result<(), Error> {
+fn run() -> Result<(), Error> {
     let app = App::new("Command-line Doom launcher")
             .version("0.1.0")
             .before_help("This Doom launcher allows shortcuts to the many long-winded options that Doom engines accept.")
             .setting(AppSettings::TrailingVarArg)
+            .setting(AppSettings::ColorAuto)
             .arg(Arg::with_name("3p").long("3p").help("Add the 3P Sound Pack"))
             .arg(Arg::with_name("compatibility-level").short("c").long("compatibility-level").help("Set the compatibility level to LEVEL").value_name("LEVEL"))
             .arg(Arg::with_name("debug").short("G").long("debug").help("Run Doom under a debugger"))
@@ -468,9 +474,9 @@ fn run<'s>() -> Result<(), Error> {
             .map_err(Error::Io)?;
         if answer {
             create_dir_all(doom_dir()?).map_err(Error::Io)?;
-            println!("Success.");
+            info!("Success.");
         } else {
-            println!("Cannot continue. You can set the dedicated Doom directory by passing the flag --doom-dir. You only have to pass the flag once, as it will be remembered.");
+            warn!("Cannot continue. You can set the dedicated Doom directory by passing the flag --doom-dir. You only have to pass the flag once, as it will be remembered.");
             return Ok(());
         }
     }
@@ -482,18 +488,20 @@ fn run<'s>() -> Result<(), Error> {
         .or_else(|| known_engines.iter().next())
         .ok_or(Error::NoEngines)?;
     let engine = &known_engines.get(&engine_name).unwrap_or_else(|| {
-        eprintln!("ERROR: Unknown sourceport '{}'", engine_name);
+        error!("ERROR: Unknown sourceport '{}'", engine_name);
         exit(-1);
     });
 
     let mut search_iwads: Box<dyn Iterator<Item = String>> = matches
         .value_of("iwad")
         .map::<Box<dyn Iterator<Item = String>>, _>(|i| Box::new(std::iter::once(i.to_string())))
-        .unwrap_or(Box::new(
-            ["DOOM2.WAD", "DOOM.WAD", "DOOMU.WAD", "DOOM1.WAD"]
-                .iter()
-                .map(|i: &&str| i.to_string()),
-        ));
+        .unwrap_or_else(|| {
+            Box::new(
+                ["DOOM2.WAD", "DOOM.WAD", "DOOMU.WAD", "DOOM1.WAD"]
+                    .iter()
+                    .map(|i: &&str| i.to_string()),
+            )
+        });
     let iwad_path = loop {
         let iwad = match search_iwads.next() {
             Some(i) => i,
@@ -507,13 +515,13 @@ fn run<'s>() -> Result<(), Error> {
             }
         })?;
         if iwad_path.is_empty() {
-            eprintln!("IWAD not found: '{}'", iwad);
+            warn!("IWAD not found: '{}'", iwad);
         } else {
             break Some(iwad_path);
         }
     };
     if iwad_path.is_none() {
-        eprintln!("No IWADs could be found.");
+        error!("No IWADs could be found.");
         exit(-1);
     }
     let iwad_path = iwad_path.unwrap();
@@ -564,9 +572,8 @@ fn run<'s>() -> Result<(), Error> {
         ) {
             pwads.add_wads(assets);
         } else {
-            print!("Couldn't find widescreen assets for ");
-            print!(
-                "{}",
+            warn!(
+                "Couldn't find widescreen assets for {}.",
                 match iwad_noext.as_str() {
                     "doom" => "Doom",
                     "doom2" => "Doom 2",
@@ -575,7 +582,6 @@ fn run<'s>() -> Result<(), Error> {
                     _ => "<unknown IWAD>",
                 }
             );
-            println!(".");
         }
     }
 
@@ -725,7 +731,7 @@ fn run<'s>() -> Result<(), Error> {
     if let Some(playing_demo) = matches.value_of("play-demo") {
         let demo = select_between(playing_demo, search_file(playing_demo, FileType::Demo)?)?;
         if demo.is_empty() {
-            eprintln!("No such demo: {}", playing_demo);
+            error!("No such demo: {}", playing_demo);
             exit(-1);
         }
         cmdline.push_line(Line::from_word("-playdemo", 1));
@@ -776,11 +782,11 @@ fn run<'s>() -> Result<(), Error> {
             .split(':')
             .flat_map(|demo| {
                 let results = search_file(demo, FileType::Demo).unwrap_or_else(|e| {
-                    eprintln!("Error: {}", e);
+                    error!("{}", e);
                     exit(-1);
                 });
                 if results.is_empty() {
-                    eprintln!("Failed to find demo '{}'", demo);
+                    error!("Failed to find demo '{}'", demo);
                     exit(-1);
                 }
                 results
@@ -835,9 +841,14 @@ fn run<'s>() -> Result<(), Error> {
             "Command line: \n'\n{}\n'",
             cmdline.iter_lines().map(|l| l.iter().join(" ")).join("\n")
         );
-        print!("Press enter to launch Doom.");
-        stdout().flush().map_err(Error::Io)?;
-        stdin().read_line(&mut String::new()).map_err(Error::Io)?;
+        Input::<String>::with_theme(&ColorfulTheme {
+            prompt_prefix: style("*".into()).yellow(),
+            ..Default::default()
+        })
+        .with_prompt("Press enter to launch Doom.")
+        .allow_empty(true)
+        .interact()
+        .map_err(Error::Io)?;
         run_doom(cmdline.iter_words())?;
     }
     let (job_sender, job_receiver) = channel::<Result<Job, Error>>();
@@ -855,7 +866,7 @@ fn run<'s>() -> Result<(), Error> {
                 });
 
             if extra_demos.split_whitespace().next().is_none() {
-                println!("You didn't enter any demo names.");
+                warn!("You didn't enter any demo names.");
                 return;
             }
             let jobs_sending_result = extra_demos
@@ -916,9 +927,9 @@ fn run<'s>() -> Result<(), Error> {
     .map_err(Error::SignalHandler)?;
     let mut i = 1;
     while !renderings.is_empty() {
-        println!("====== RENDERING QUEUE ======");
+        info!("====== RENDERING QUEUE ======");
         for job in &renderings {
-            println!(
+            info!(
                 "{}  ==>  {}",
                 job.demo_name.to_str().ok_or_else(|| Error::NonUtf8Path(
                     job.demo_name.to_string_lossy().into_owned()
@@ -926,7 +937,7 @@ fn run<'s>() -> Result<(), Error> {
                 job.name
             );
         }
-        println!("==== END RENDERING QUEUE ====");
+        info!("==== END RENDERING QUEUE ====");
 
         let job = renderings.remove(0);
         let render_cmdline = {
@@ -957,16 +968,17 @@ fn run<'s>() -> Result<(), Error> {
                 .join("\n")
         );
         if i == 1 {
-            let mut prompt = String::from("Press enter to begin ");
-            if !renderings.is_empty() {
-                prompt += "batch ";
-            }
-            print!("{}rendering.", prompt);
-            stdout().flush().map_err(Error::Io)?;
-            stdin().read_line(&mut String::new()).map_err(Error::Io)?;
+            Input::<String>::with_theme(&ColorfulTheme::default())
+                .with_prompt(format!(
+                    "Press enter to begin {}rendering.",
+                    if !renderings.is_empty() { "batch" } else { "" }
+                ))
+                .allow_empty(true)
+                .interact()
+                .map_err(Error::Io)?;
         } else {
             CANCELLABLE.store(true, Ordering::SeqCst);
-            println!("Continuing batch rendering in 10 seconds. Press <C-c> to add more demos to the queue.");
+            info!("Continuing batch rendering in 10 seconds. Press <C-c> to add more demos to the queue.");
             sleep(Duration::from_secs(10));
             if PAUSED.load(Ordering::SeqCst) {
                 unpause_receiver.recv()?;
@@ -985,8 +997,9 @@ fn run<'s>() -> Result<(), Error> {
 }
 
 fn main() {
+    pretty_env_logger::init();
     if let Err(e) = run() {
-        eprintln!("ERROR: {}", e);
+        error!("{}", e);
         exit(-1);
     }
 }

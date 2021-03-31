@@ -77,12 +77,12 @@ impl<'l> Iterator for LineIterator<'l> {
         self.line.words.get(n).map(|s| s.as_str())
     }
 
-    fn fold<B, F>(mut self, mut init: B, mut f: F) -> B
+    fn fold<B, F>(self, mut init: B, mut f: F) -> B
     where
         Self: Sized,
         F: FnMut(B, Self::Item) -> B,
     {
-        while let Some(n) = self.next() {
+        for n in self {
             init = f(init, n);
         }
         init

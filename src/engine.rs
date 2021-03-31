@@ -3,6 +3,9 @@ use std::fs::File;
 use std::path::PathBuf;
 
 use indoc::indoc;
+use log::info;
+use log::trace;
+use log::warn;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -29,6 +32,7 @@ use crate::util::absolute_path;
 use crate::Error;
 
 #[derive(Deserialize, Serialize, PartialEq, Eq, Clone, Copy)]
+#[allow(clippy::upper_case_acronyms)]
 pub(crate) enum DoomEngineKind {
     Vanilla,
     Boom,
@@ -83,7 +87,7 @@ impl KnownEngines {
         Some(&self.engines[index])
     }
 
-    pub fn iter<'k>(&'k self) -> KnownEnginesIterator {
+    pub fn iter(&'_ self) -> KnownEnginesIterator {
         let engines = self.engines.clone();
         KnownEnginesIterator {
             iter: Box::new(
@@ -98,12 +102,12 @@ impl KnownEngines {
 
 pub(crate) fn read_known_engines() -> Result<KnownEngines, Error> {
     let engines_json_path = crate::doom_dir()?.join("engines.toml");
-    println!(
+    trace!(
         "Searching for Doom engine definitions in {}",
         engines_json_path.to_string_lossy()
     );
     if !engines_json_path.exists() {
-        println!("Path not found, creating template. Please fill out this template.");
+        warn!("Path not found, creating template. Please fill out this template.");
         let mut f = File::create(&engines_json_path).map_err(Error::Io)?;
 
         use std::io::Write;
@@ -126,7 +130,7 @@ pub(crate) fn read_known_engines() -> Result<KnownEngines, Error> {
             })
         })
         .collect::<Result<_, _>>()?;
-    println!("Found engines:");
-    engines.keys().for_each(|eng| println!("    {}", eng));
+    info!("Found engines:");
+    engines.keys().for_each(|eng| info!("    {}", eng));
     Ok(KnownEngines::new(engines))
 }
