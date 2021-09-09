@@ -7,11 +7,13 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::exit;
 use std::process::Command;
+use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::RecvError;
 use std::sync::mpsc::SendError;
+use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -45,6 +47,8 @@ mod cmd;
 mod engine;
 mod job;
 mod util;
+
+static CUSTOM_DOOM_DIR: Lazy<Mutex<Option<PathBuf>>> = Lazy::new(|| Mutex::new(None));
 
 struct Pwads {
     wads: Vec<PathBuf>,
@@ -108,7 +112,11 @@ fn home_dir() -> Result<PathBuf, Error> {
 }
 
 fn doom_dir() -> Result<PathBuf, Error> {
-    home_dir().map(|h| h.join("doom"))
+    if let Some(dir) = CUSTOM_DOOM_DIR.lock().unwrap().as_ref() {
+        Ok(dir.clone())
+    } else {
+        home_dir().map(|h| h.join("doom"))
+    }
 }
 
 fn public_doom_dir() -> PathBuf {
@@ -203,25 +211,6 @@ fn search_file_in_dirs_by(
 
             let search_dir = absolute_path(PathBuf::from(&search_dir))?;
 
-            // let results = WalkDir::new(search_dir)
-            //     .contents_first(true)
-            //     .into_iter()
-            //     .flat_map(|entry| entry.map_err(Error::WalkDir))
-            //     .filter(|entry| entry.path().is_dir())
-            //     .filter_map(|entry| {
-            //         entry
-            //             .path()
-            //             .file_stem()
-            //             .map(|fs| fs.to_string_lossy().eq_ignore_ascii_case(base_name))
-            //             .ok_or_else(|| Error::NoFileStem(entry.path().to_owned()))
-            //             .and_then(|stems_eq| {
-            //                 // TODO TODO TODO
-            //                 extension
-            //                     .map(|ext| ext.to_str().ok_or_else(|| Error::NonUtf8Path(ext.into())).map(|ext| ))
-            //                     .transpose()
-            //             });
-            //         None
-            //     });
             struct SearchResult {
                 path: PathBuf,
                 score: usize,
@@ -441,6 +430,7 @@ fn run() -> Result<(), Error> {
             .arg(Arg::with_name("3p").long("3p").help("Add the 3P Sound Pack"))
             .arg(Arg::with_name("compatibility-level").short("c").long("compatibility-level").help("Set the compatibility level to LEVEL").value_name("LEVEL"))
             .arg(Arg::with_name("debug").short("G").long("debug").help("Run Doom under a debugger"))
+            .arg(Arg::with_name("doom-dir").long("doom-dir").help("Set a custom Doom configuration directory"))
             .arg(Arg::with_name("engine").short("e").long("engine").help("Play the game with ENGINE instead of DSDA Doom").value_name("ENGINE"))
             .arg(Arg::with_name("extra-pwads").short("x").long("extra-pwads").help("Add PWADS to the game, silently").long_help("Silently means that when rendering a demo (with --render), the program will not add these PWADs to the folder name.").value_name("WAD").multiple(true))
             .arg(Arg::with_name("fast").short("f").long("fast").help("Enable fast monsters"))
@@ -463,6 +453,10 @@ fn run() -> Result<(), Error> {
             ;
 
     let matches = app.get_matches();
+
+    if let Some(doom_dir) = matches.value_of("doom-dir") {
+        *CUSTOM_DOOM_DIR.lock().unwrap() = Some(PathBuf::from_str(doom_dir).unwrap());
+    }
 
     if !doom_dir()?.exists() {
         let answer = Confirm::with_theme(&ColorfulTheme::default())
