@@ -361,7 +361,7 @@ struct Autoloads {
 }
 
 fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(), Error> {
-    let autoload_path = doom_dir()?.join("autoloads.toml");
+    let autoload_path = doom_dir()?.join("autoloads.ron");
     File::open(&autoload_path).or_else(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             write!(
@@ -369,14 +369,18 @@ fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(
                     Error::CreatingAutoloadsFile(e)
                 })?,
                 indoc! {r#"
-                    # Place in 'universal' those PWADs that you always want to load.
-                    universal = []
-                    [iwad]
-                    # Place in here those PWADs that only load under a specific IWAD. The key should be the IWAD, and the value the names of the PWADs.
-                    example = ["foo.wad", "bar.pk3", "baz.zip"]
-                    [sourceport]
-                    # Place in here those PWADs that only load under a specific sourceport. The key should be the sourceport, and the value should be the PWADs.
-                    example = ["foo.wad", "bar.pk3", "baz.zip"]
+                    Autoloads(
+                        // Place here those PWADs you always want to load.
+                        universal: [],
+                        iwad: {{
+                            // Place in here those PWADs that only load based on the IWAD.
+                            "doom2.wad": ["foo.wad"],
+                        }},
+                        sourceport: {{
+                            // Place in here those PWADs that only load based on the sourceport.
+                            "example": ["bar.pk3"],
+                        }},
+                    )
                 "#},
             ).map_err(Error::Io)?;
             File::open(autoload_path.as_path()).map_err(Error::OpeningFile)
@@ -384,12 +388,15 @@ fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(
             Err(Error::Io(e))
         }
     })?;
-    let autoloads: Autoloads = toml::from_slice(
-        std::fs::read(autoload_path.as_path())
-            .map_err(Error::Io)?
-            .as_slice(),
+    let autoloads: Autoloads = ron::from_str(
+        String::from_utf8_lossy(
+            std::fs::read(autoload_path.as_path())
+                .map_err(Error::Io)?
+                .as_slice(),
+        )
+        .as_ref(),
     )
-    .map_err(|e| Error::BadToml {
+    .map_err(|e| Error::BadRon {
         file: autoload_path.clone(),
         error: e,
     })?;
@@ -1000,11 +1007,8 @@ fn main() {
 
 #[derive(Debug, thiserror::Error)]
 enum Error {
-    #[error("'{file}' contains bad TOML: {error}")]
-    BadToml {
-        file: PathBuf,
-        error: toml::de::Error,
-    },
+    #[error("'{file}' contains bad RON: {error}")]
+    BadRon { file: PathBuf, error: ron::Error },
     #[error("creating autoloads file in your Doom directory: {0}")]
     CreatingAutoloadsFile(io::Error),
     #[error("file not found: '{0}'")]

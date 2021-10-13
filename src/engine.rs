@@ -11,20 +11,26 @@ use serde::Serialize;
 
 const EXAMPLE_ENGINES_FILE: &str = indoc!(
     r#"
-    # This header should be the canonical name of your engine.
-    [example]
-    # Put here any aliases that you want to use with the -e option.
-    aliases = ["example", "ex"]
-    # Path to the binary.
-    binary = "/dev/zero"
-    # What compatibility levels does this engine support?
-    # Valid values: ["Vanilla", "Boom", "MBF", "Eternity", "ZDoom"]
-    kind = "Vanilla"
-    # Does this engine support the official Doom widescreen assets?
-    # Most engines don't, so if you don't know then put false here.
-    supports_widescreen_assets = false
-    # Are there any extra arguments that this engine needs in all cases?
-    required_args = []
+    {
+        // This header should be the canonical name of your engine.
+        "example": DoomEngine(
+            // Put here any aliases you want to use with the -e option.
+            aliases: [
+                "example",
+                "ex",
+            ],
+            // Path to the binary.
+            binary: "/dev/zero",
+            // What compatibility levels does this engine support?
+            // Valid values: ("Vanilla", "Boom", "MBF", "Eternity", "ZDoom")
+            kind: Vanilla,
+            // Does this engine support the official Doom widescreen assets?
+            // Most engines don't, so if you don't know, put false here.
+            supports_widescreen_assets: false,
+            // Are there any other arguments you want to always pass to the engine?
+            required_args: [],
+        ),
+    }
     "#
 );
 
@@ -101,7 +107,7 @@ impl KnownEngines {
 }
 
 pub(crate) fn read_known_engines() -> Result<KnownEngines, Error> {
-    let engines_json_path = crate::doom_dir()?.join("engines.toml");
+    let engines_json_path = crate::doom_dir()?.join("engines.ron");
     trace!(
         "Searching for Doom engine definitions in {}",
         engines_json_path.to_string_lossy()
@@ -114,10 +120,10 @@ pub(crate) fn read_known_engines() -> Result<KnownEngines, Error> {
         write!(f, "{}", EXAMPLE_ENGINES_FILE).map_err(Error::Io)?;
     }
 
-    let engines: HashMap<String, DoomEngine> = toml::from_slice(
+    let engines: HashMap<String, DoomEngine> = ron::from_str(&String::from_utf8_lossy(
         &std::fs::read(engines_json_path.as_path()).map_err(Error::Io)?,
-    )
-    .map_err(|error| Error::BadToml {
+    ))
+    .map_err(|error| Error::BadRon {
         file: engines_json_path,
         error,
     })?;
