@@ -11,20 +11,21 @@ use serde::Serialize;
 
 const EXAMPLE_ENGINES_FILE: &str = indoc!(
     r#"
-    # This header should be the canonical name of your engine.
-    [example]
-    # Put here any aliases that you want to use with the -e option.
-    aliases = ["example", "ex"]
-    # Path to the binary.
-    binary = "/dev/zero"
-    # What compatibility levels does this engine support?
-    # Valid values: ["Vanilla", "Boom", "MBF", "Eternity", "ZDoom"]
-    kind = "Vanilla"
-    # Does this engine support the official Doom widescreen assets?
-    # Most engines don't, so if you don't know then put false here.
-    supports_widescreen_assets = false
-    # Are there any extra arguments that this engine needs in all cases?
-    required_args = []
+    // Replace 'example' with the name of your sourceport.
+    example {
+        // Put here any aliases you want to use with the -e option.
+        aliases example ex
+        // Path to the binary
+        binary /dev/zero
+        // What compatibility levels does this engine support?
+        // Valid values: {Vanilla, Boom, MBF, Eternity, ZDoom}
+        kind Vanilla
+        // Does this engine support the official Doom widescreen assets?
+        // Most engines don't, so if you don't know then put false here.
+        supports_widescreen_assets false
+        // Are there any extra arguments that should always be passed to the engine?
+        required_args
+    }
     "#
 );
 
@@ -48,6 +49,18 @@ pub(crate) struct DoomEngine {
     pub kind: DoomEngineKind,
     pub supports_widescreen_assets: bool,
     pub required_args: Vec<String>,
+}
+
+impl Default for DoomEngine {
+    fn default() -> Self {
+        Self {
+            aliases: Vec::new(),
+            binary: PathBuf::from("/bin/true"),
+            kind: DoomEngineKind::Vanilla,
+            supports_widescreen_assets: false,
+            required_args: Vec::new(),
+        }
+    }
 }
 
 pub(crate) struct KnownEngines {
@@ -101,7 +114,7 @@ impl KnownEngines {
 }
 
 pub(crate) fn read_known_engines() -> Result<KnownEngines, Error> {
-    let engines_json_path = crate::doom_dir()?.join("engines.toml");
+    let engines_json_path = crate::doom_dir()?.join("engines.kdl");
     trace!(
         "Searching for Doom engine definitions in {}",
         engines_json_path.to_string_lossy()
@@ -114,13 +127,70 @@ pub(crate) fn read_known_engines() -> Result<KnownEngines, Error> {
         write!(f, "{}", EXAMPLE_ENGINES_FILE).map_err(Error::Io)?;
     }
 
-    let engines: HashMap<String, DoomEngine> = toml::from_slice(
+    let engines_raw = kdl::parse_document(String::from_utf8_lossy(
         &std::fs::read(engines_json_path.as_path()).map_err(Error::Io)?,
-    )
-    .map_err(|error| Error::BadToml {
+    ))
+    .map_err(|error| Error::BadKdl {
         file: engines_json_path,
         error,
     })?;
+
+    let engines = {
+        let mut engines = HashMap::<String, DoomEngine>::new();
+        for engine_raw in engines_raw {
+            let mut engine = DoomEngine::default();
+            for node in engine_raw.children {
+                match node.name.as_str() {
+                    "aliases" => engine
+                        .aliases
+                        .append(&mut node.values.into_iter().map(|v| v.to_string()).collect()),
+                    "binary" => {
+                        engine.binary = PathBuf::from(
+                            node.values
+                                .into_iter()
+                                .map(|v| v.to_string())
+                                .next()
+                                .unwrap(),
+                        )
+                    }
+                    "kind" => {
+                        engine.kind = match node
+                            .values
+                            .into_iter()
+                            .map(|v| v.to_string())
+                            .next()
+                            .unwrap()
+                            .as_ref()
+                        {
+                            "Vanilla" => DoomEngineKind::Vanilla,
+                            "MBF" => DoomEngineKind::MBF,
+                            "Boom" => DoomEngineKind::Boom,
+                            "ZDoom" => DoomEngineKind::ZDoom,
+                            "Eternity" => DoomEngineKind::Eternity,
+                            s => panic!("bad engine kind: {}", s),
+                        }
+                    }
+                    "supports_widescreen_assets" => {
+                        engine.supports_widescreen_assets = node
+                            .values
+                            .into_iter()
+                            .map(|v| v.to_string())
+                            .next()
+                            .unwrap()
+                            == "true";
+                    }
+                    "required_args" => {
+                        engine.required_args =
+                            node.values.into_iter().map(|v| v.to_string()).collect();
+                    }
+                    _ => {}
+                }
+            }
+            engines.insert(engine_raw.name, engine);
+        }
+        engines
+    };
+
     let engines: HashMap<String, DoomEngine> = engines
         .into_iter()
         .map(|(name, mut engine)| {

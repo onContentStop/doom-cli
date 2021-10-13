@@ -353,7 +353,7 @@ fn run_doom<'l>(mut cmdline: impl Iterator<Item = &'l str>) -> Result<(), Error>
         .map_err(Error::RunningDoom)
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize)]
 struct Autoloads {
     universal: Vec<String>,
     sourceport: HashMap<String, Vec<String>>,
@@ -361,38 +361,77 @@ struct Autoloads {
 }
 
 fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(), Error> {
-    let autoload_path = doom_dir()?.join("autoloads.toml");
+    let autoload_path = doom_dir()?.join("autoloads.kdl");
     File::open(&autoload_path).or_else(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             write!(
-                File::create(&autoload_path).map_err(|e| {
-                    Error::CreatingAutoloadsFile(e)
-                })?,
+                File::create(&autoload_path).map_err(|e| { Error::CreatingAutoloadsFile(e) })?,
                 indoc! {r#"
-                    # Place in 'universal' those PWADs that you always want to load.
-                    universal = []
-                    [iwad]
-                    # Place in here those PWADs that only load under a specific IWAD. The key should be the IWAD, and the value the names of the PWADs.
-                    example = ["foo.wad", "bar.pk3", "baz.zip"]
-                    [sourceport]
-                    # Place in here those PWADs that only load under a specific sourceport. The key should be the sourceport, and the value should be the PWADs.
-                    example = ["foo.wad", "bar.pk3", "baz.zip"]
+                    universal
+                    iwad {{
+                        // PWADs you only want to load with a specific IWAD.
+                        // First argument: name of IWAD
+                        // Rest: list of files to load
+                        // doom2.wad foo.wad bar.pk3 baz.zip
+                    }}
+                    sourceport {{
+                        // PWADS you only want to load with a specific source port.
+                        // First argument: name of source port
+                        // Rest: list of files to load
+                        // example_sourceport foo.wad bar.pk3 baz.zip
+                    }}
                 "#},
-            ).map_err(Error::Io)?;
+            )
+            .map_err(Error::Io)?;
             File::open(autoload_path.as_path()).map_err(Error::OpeningFile)
         } else {
             Err(Error::Io(e))
         }
     })?;
-    let autoloads: Autoloads = toml::from_slice(
+    let autoloads_raw = kdl::parse_document(String::from_utf8_lossy(
         std::fs::read(autoload_path.as_path())
             .map_err(Error::Io)?
             .as_slice(),
-    )
-    .map_err(|e| Error::BadToml {
+    ))
+    .map_err(|e| Error::BadKdl {
         file: autoload_path.clone(),
         error: e,
     })?;
+
+    let autoloads = {
+        let mut autoloads = Autoloads::default();
+        for node in autoloads_raw {
+            match node.name.as_str() {
+                "universal" => {
+                    autoloads
+                        .universal
+                        .append(&mut node.values.into_iter().map(|v| v.to_string()).collect());
+                }
+                "iwad" => {
+                    for iwad in node.children {
+                        autoloads.iwad.insert(
+                            iwad.name,
+                            iwad.values.into_iter().map(|v| v.to_string()).collect(),
+                        );
+                    }
+                }
+                "sourceport" => {
+                    for sourceport in node.children {
+                        autoloads.sourceport.insert(
+                            sourceport.name,
+                            sourceport
+                                .values
+                                .into_iter()
+                                .map(|v| v.to_string())
+                                .collect(),
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+        autoloads
+    };
 
     let universal_pwads = search_files(&autoloads.universal, FileType::Pwad)?;
     pwads.add_wads(universal_pwads);
@@ -1000,11 +1039,8 @@ fn main() {
 
 #[derive(Debug, thiserror::Error)]
 enum Error {
-    #[error("'{file}' contains bad TOML: {error}")]
-    BadToml {
-        file: PathBuf,
-        error: toml::de::Error,
-    },
+    #[error("'{file}' contains bad KDL: {error}")]
+    BadKdl { file: PathBuf, error: kdl::KdlError },
     #[error("creating autoloads file in your Doom directory: {0}")]
     CreatingAutoloadsFile(io::Error),
     #[error("file not found: '{0}'")]
