@@ -586,20 +586,6 @@ fn run() -> Result<(), Error> {
         }
     }
 
-    let (sprite_fix, deh_fix) = match iwad_noext.as_str() {
-        "doom2" | "tnt" | "plutonia" => (
-            search_file("d2spfx19.wad", FileType::Pwad)?,
-            search_file("d2dehfix.deh", FileType::Pwad)?,
-        ),
-        "doom" => (
-            search_file("d1spfx19.wad", FileType::Pwad)?,
-            search_file("d1dehfix.deh", FileType::Pwad)?,
-        ),
-        _ => (vec![], vec![]),
-    };
-    pwads.add_wads(sprite_fix);
-    pwads.add_dehs(deh_fix);
-
     autoload(&mut pwads, &engine.binary, &iwad_noext)?;
 
     let mut viddump_folder_name = vec![];
