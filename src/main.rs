@@ -368,9 +368,7 @@ fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(
     File::open(&autoload_path).or_else(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             write!(
-                File::create(&autoload_path).map_err(|e| {
-                    Error::CreatingAutoloadsFile(e)
-                })?,
+                File::create(&autoload_path).map_err(|e| { Error::CreatingAutoloadsFile(e) })?,
                 indoc! {r#"
                     Autoloads(
                         // Place here those PWADs you always want to load.
@@ -385,7 +383,8 @@ fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(
                         }},
                     )
                 "#},
-            ).map_err(Error::Io)?;
+            )
+            .map_err(Error::Io)?;
             File::open(autoload_path.as_path()).map_err(Error::OpeningFile)
         } else {
             Err(Error::Io(e))
@@ -641,8 +640,23 @@ fn run() -> Result<(), Error> {
     }
 
     if let Some(extra_pwads) = matches.value_of("extra-pwads") {
-        for pwad in extra_pwads.split(':') {
-            pwads.add_wads(search_file(pwad, FileType::Pwad)?);
+        for pwad in extra_pwads.split(ARG_SEPARATOR) {
+            let mut found = search_file(pwad, FileType::Pwad)?;
+            let i = if found.len() > 1 {
+                dialoguer::Select::new()
+                    .items(
+                        &found
+                            .iter()
+                            .map(|p| p.to_string_lossy())
+                            .collect::<Vec<_>>(),
+                    )
+                    .with_prompt("Multiple candidates were found. Select one.")
+                    .interact()
+                    .map_err(|e| Error::Io(e))?
+            } else {
+                0
+            };
+            pwads.add_wad(found.remove(i));
         }
     }
 

@@ -1,6 +1,6 @@
+use path_clean::PathClean;
 use std::path::Path;
 use std::path::PathBuf;
-use path_clean::PathClean;
 
 use crate::doom_dir;
 use crate::Error;
