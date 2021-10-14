@@ -102,10 +102,7 @@ impl FileType {
     }
 }
 
-#[cfg(unix)]
-const ARG_SEPARATOR: char = ':';
-#[cfg(windows)]
-const ARG_SEPARATOR: char = ';';
+const ARG_SEPARATOR: char = ',';
 
 fn home_dir() -> Result<PathBuf, Error> {
     dirs::home_dir().ok_or(Error::Homeless)
@@ -218,7 +215,13 @@ fn search_file_in_dirs_by(
             let mut results = vec![];
 
             for entry in WalkDir::new(search_dir).contents_first(true) {
-                let entry = entry?;
+                let entry = match entry {
+                    Ok(e) => e,
+                    Err(e) => {
+                        info!("Stopping search due to an error: {}", e);
+                        break;
+                    }
+                };
 
                 if entry.path().is_dir() {
                     continue;
