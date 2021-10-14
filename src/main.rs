@@ -619,7 +619,24 @@ fn run() -> Result<(), Error> {
                     })
                     .collect::<Result<Vec<_>, _>>()?,
             );
-            arg_pwads.append(&mut pwad_files);
+            let i = if pwad_files.len() > 1 {
+                dialoguer::Select::new()
+                    .items(
+                        pwad_files
+                            .iter()
+                            .map(|p| p.to_string_lossy())
+                            .collect::<Vec<_>>()
+                            .as_ref(),
+                    )
+                    .with_prompt(
+                        format!("Multiple results were found for {}. Select one.", pwad).as_str(),
+                    )
+                    .interact()
+                    .map_err(Error::Io)?
+            } else {
+                0
+            };
+            arg_pwads.push(pwad_files.remove(i));
         }
         for pwad in arg_pwads {
             match pwad
