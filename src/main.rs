@@ -1,7 +1,4 @@
-use std::collections::HashMap;
 use std::fs::create_dir_all;
-use std::fs::File;
-use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::exit;
@@ -17,14 +14,11 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::Confirm;
 use dialoguer::Input;
 use dialoguer::MultiSelect;
-use indoc::indoc;
 use itertools::Itertools;
 use log::error;
 use log::info;
 use log::warn;
 use once_cell::sync::Lazy;
-use serde::Deserialize;
-use serde::Serialize;
 
 use crate::cmd::CommandLine;
 use crate::cmd::Line;
@@ -37,6 +31,7 @@ use crate::pwads::Pwads;
 use crate::render::batch_render;
 use crate::util::absolute_path;
 
+mod autoload;
 mod cmd;
 mod engine;
 mod error;
@@ -151,77 +146,6 @@ fn dirname(binary: &Path) -> PathBuf {
     let mut d = binary.to_owned();
     d.pop();
     d
-}
-
-#[derive(Serialize, Deserialize)]
-struct Autoloads {
-    universal: Vec<String>,
-    sourceport: HashMap<String, Vec<String>>,
-    iwad: HashMap<String, Vec<String>>,
-}
-
-fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(), Error> {
-    let autoload_path = doom_dir()?.join("autoloads.ron");
-    File::open(&autoload_path).or_else(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            write!(
-                File::create(&autoload_path).map_err(|e| { Error::CreatingAutoloadsFile(e) })?,
-                indoc! {r#"
-                    Autoloads(
-                        // Place here those PWADs you always want to load.
-                        universal: [],
-                        iwad: {{
-                            // Place in here those PWADs that only load based on the IWAD.
-                            "doom2.wad": ["foo.wad"],
-                        }},
-                        sourceport: {{
-                            // Place in here those PWADs that only load based on the sourceport.
-                            "example": ["bar.pk3"],
-                        }},
-                    )
-                "#},
-            )
-            .map_err(Error::Io)?;
-            File::open(autoload_path.as_path()).map_err(Error::OpeningFile)
-        } else {
-            Err(Error::Io(e))
-        }
-    })?;
-    let autoloads: Autoloads = ron::from_str(
-        String::from_utf8_lossy(
-            std::fs::read(autoload_path.as_path())
-                .map_err(Error::Io)?
-                .as_slice(),
-        )
-        .as_ref(),
-    )
-    .map_err(|e| Error::BadRon {
-        file: autoload_path.clone(),
-        error: e,
-    })?;
-
-    let universal_pwads = search::search_files(&autoloads.universal, FileType::Pwad)?;
-    pwads.add_wads(universal_pwads);
-
-    autoloads
-        .sourceport
-        .get(
-            engine
-                .as_ref()
-                .file_stem()
-                .ok_or_else(|| Error::NoFileStem(engine.as_ref().to_string_lossy().to_string()))?
-                .to_string_lossy()
-                .as_ref(),
-        )
-        .map(|engine_specific_pwads| {
-            pwads.add_wads(search::search_files(engine_specific_pwads, FileType::Pwad)?);
-            Result::<(), Error>::Ok(())
-        })
-        .unwrap_or(Ok(()))?;
-    if let Some(iwad_specific_pwads) = autoloads.iwad.get(iwad) {
-        pwads.add_wads(search::search_files(iwad_specific_pwads, FileType::Pwad)?);
-    }
-    Ok(())
 }
 
 fn run() -> Result<(), Error> {
@@ -382,7 +306,7 @@ fn run() -> Result<(), Error> {
         }
     }
 
-    autoload(&mut pwads, &engine.binary, &iwad_noext)?;
+    autoload::autoload(&mut pwads, &engine.binary, &iwad_noext)?;
 
     let mut viddump_folder_name = vec![];
 
