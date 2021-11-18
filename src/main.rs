@@ -56,7 +56,7 @@ enum FileType {
 }
 
 impl FileType {
-    fn get_search_dirs(&self) -> Result<Vec<PathBuf>, error::Error> {
+    fn get_search_dirs(&self) -> Result<Vec<PathBuf>, Error> {
         vec![doom_dir(), Ok(public_doom_dir())]
             .into_iter()
             .collect()
@@ -65,11 +65,11 @@ impl FileType {
 
 const ARG_SEPARATOR: char = ',';
 
-fn home_dir() -> Result<PathBuf, error::Error> {
-    dirs::home_dir().ok_or(error::Error::Homeless)
+fn home_dir() -> Result<PathBuf, Error> {
+    dirs::home_dir().ok_or(Error::Homeless)
 }
 
-fn doom_dir() -> Result<PathBuf, error::Error> {
+fn doom_dir() -> Result<PathBuf, Error> {
     if let Some(dir) = CUSTOM_DOOM_DIR.lock().unwrap().as_ref() {
         Ok(dir.clone())
     } else {
@@ -81,7 +81,7 @@ fn public_doom_dir() -> PathBuf {
     PathBuf::from("/public/doom")
 }
 
-fn demo_dir() -> Result<PathBuf, error::Error> {
+fn demo_dir() -> Result<PathBuf, Error> {
     doom_dir().map(|d| d.join("demo"))
 }
 
@@ -108,7 +108,7 @@ static DUMP_DIR: Lazy<PathBuf> = Lazy::new(|| PathBuf::from("E:").join("Videos")
 fn select_between<P: AsRef<Path>>(
     search: impl AsRef<str>,
     options: impl AsRef<[P]>,
-) -> Result<Vec<PathBuf>, error::Error> {
+) -> Result<Vec<PathBuf>, Error> {
     MultiSelect::new()
         .with_prompt(format!("Multiple files were found for the search term {}. Please select one or more of the following:", search.as_ref()))
         .items(
@@ -120,15 +120,13 @@ fn select_between<P: AsRef<Path>>(
         )
         .interact()
         .map(|indices| indices.iter().map(|i| options.as_ref()[*i].as_ref().to_owned()).collect())
-        .map_err(error::Error::Io)
+        .map_err(Error::Io)
 }
 
-fn run_doom<'l>(mut cmdline: impl Iterator<Item = &'l str>) -> Result<(), error::Error> {
+fn run_doom<'l>(mut cmdline: impl Iterator<Item = &'l str>) -> Result<(), Error> {
     let binary = PathBuf::from(cmdline.next().unwrap());
     if !binary.exists() {
-        return Err(error::Error::FileNotFound(
-            binary.to_string_lossy().into_owned(),
-        ));
+        return Err(Error::FileNotFound(binary.to_string_lossy().into_owned()));
     }
     let binary_dir = {
         let mut d = binary.clone();
@@ -150,7 +148,7 @@ fn run_doom<'l>(mut cmdline: impl Iterator<Item = &'l str>) -> Result<(), error:
         .current_dir(binary_dir)
         .status()
         .map(|_| ())
-        .map_err(error::Error::RunningDoom)
+        .map_err(Error::RunningDoom)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -160,7 +158,7 @@ struct Autoloads {
     iwad: HashMap<String, Vec<String>>,
 }
 
-fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(), error::Error> {
+fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(), Error> {
     let autoload_path = doom_dir()?.join("autoloads.ron");
     File::open(&autoload_path).or_else(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -181,21 +179,21 @@ fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(
                     )
                 "#},
             )
-            .map_err(error::Error::Io)?;
-            File::open(autoload_path.as_path()).map_err(error::Error::OpeningFile)
+            .map_err(Error::Io)?;
+            File::open(autoload_path.as_path()).map_err(Error::OpeningFile)
         } else {
-            Err(error::Error::Io(e))
+            Err(Error::Io(e))
         }
     })?;
     let autoloads: Autoloads = ron::from_str(
         String::from_utf8_lossy(
             std::fs::read(autoload_path.as_path())
-                .map_err(error::Error::Io)?
+                .map_err(Error::Io)?
                 .as_slice(),
         )
         .as_ref(),
     )
-    .map_err(|e| error::Error::BadRon {
+    .map_err(|e| Error::BadRon {
         file: autoload_path.clone(),
         error: e,
     })?;
@@ -209,15 +207,13 @@ fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(
             engine
                 .as_ref()
                 .file_stem()
-                .ok_or_else(|| {
-                    error::Error::NoFileStem(engine.as_ref().to_string_lossy().to_string())
-                })?
+                .ok_or_else(|| Error::NoFileStem(engine.as_ref().to_string_lossy().to_string()))?
                 .to_string_lossy()
                 .as_ref(),
         )
         .map(|engine_specific_pwads| {
             pwads.add_wads(search::search_files(engine_specific_pwads, FileType::Pwad)?);
-            Result::<(), error::Error>::Ok(())
+            Result::<(), Error>::Ok(())
         })
         .unwrap_or(Ok(()))?;
     if let Some(iwad_specific_pwads) = autoloads.iwad.get(iwad) {
@@ -226,7 +222,7 @@ fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(
     Ok(())
 }
 
-fn run() -> Result<(), error::Error> {
+fn run() -> Result<(), Error> {
     let app = App::new("Command-line Doom launcher")
             .version("0.1.0")
             .before_help("This Doom launcher allows shortcuts to the many long-winded options that Doom engines accept.")
@@ -270,9 +266,9 @@ fn run() -> Result<(), error::Error> {
                 doom_dir()?.to_string_lossy()
             ))
             .interact()
-            .map_err(error::Error::Io)?;
+            .map_err(Error::Io)?;
         if answer {
-            create_dir_all(doom_dir()?).map_err(error::Error::Io)?;
+            create_dir_all(doom_dir()?).map_err(Error::Io)?;
             info!("Success.");
         } else {
             warn!("Cannot continue. You can set the dedicated Doom directory by passing the flag --doom-dir. You only have to pass the flag once, as it will be remembered.");
@@ -285,7 +281,7 @@ fn run() -> Result<(), error::Error> {
         .value_of("engine")
         .map(|s| s.to_owned())
         .or_else(|| known_engines.iter().next())
-        .ok_or(error::Error::NoEngines)?;
+        .ok_or(Error::NoEngines)?;
     let engine = &known_engines.get(&engine_name).unwrap_or_else(|| {
         error!("ERROR: Unknown sourceport '{}'", engine_name);
         exit(-1);
@@ -307,7 +303,7 @@ fn run() -> Result<(), error::Error> {
             None => break None,
         };
         let iwad_path = search::search_file(&iwad, FileType::Iwad).or_else(|e| {
-            if let error::Error::FileNotFound(_) = e {
+            if let Error::FileNotFound(_) = e {
                 Ok(vec![])
             } else {
                 Err(e)
@@ -329,17 +325,17 @@ fn run() -> Result<(), error::Error> {
 
     let iwad_base = iwad_path
         .file_name()
-        .ok_or_else(|| error::Error::NoFileStem(iwad_path.to_string_lossy().into_owned()))
+        .ok_or_else(|| Error::NoFileStem(iwad_path.to_string_lossy().into_owned()))
         .and_then(|f| {
             f.to_str()
-                .ok_or_else(|| error::Error::NonUtf8Path(f.to_string_lossy().into_owned()))
+                .ok_or_else(|| Error::NonUtf8Path(f.to_string_lossy().into_owned()))
         })?;
     let iwad_noext = iwad_path
         .file_stem()
-        .ok_or_else(|| error::Error::NoFileStem(iwad_path.to_string_lossy().into_owned()))
+        .ok_or_else(|| Error::NoFileStem(iwad_path.to_string_lossy().into_owned()))
         .and_then(|i| {
             i.to_str()
-                .ok_or_else(|| error::Error::NonUtf8Path(i.to_string_lossy().into_owned()))
+                .ok_or_else(|| Error::NonUtf8Path(i.to_string_lossy().into_owned()))
         })?
         .to_lowercase();
 
@@ -348,9 +344,10 @@ fn run() -> Result<(), error::Error> {
         cmdline.push_line(Line::from_word("/usr/bin/lldb", 0));
     }
     cmdline.push_line(Line::from_word(
-        engine.binary.to_str().ok_or_else(|| {
-            error::Error::NonUtf8Path(engine.binary.to_string_lossy().into_owned())
-        })?,
+        engine
+            .binary
+            .to_str()
+            .ok_or_else(|| Error::NonUtf8Path(engine.binary.to_string_lossy().into_owned()))?,
         0,
     ));
     if matches.is_present("debug") {
@@ -409,7 +406,7 @@ fn run() -> Result<(), error::Error> {
         cmdline.push_line(Line::from_word("-file", 1));
         pwads.wads().iter().try_for_each(|pwad| {
             pwad.to_str()
-                .ok_or_else(|| error::Error::NonUtf8Path(pwad.to_string_lossy().into_owned()))
+                .ok_or_else(|| Error::NonUtf8Path(pwad.to_string_lossy().into_owned()))
                 .map(|pwad| cmdline.push_line(Line::from_word(pwad, 2)))
         })?;
     }
@@ -418,7 +415,7 @@ fn run() -> Result<(), error::Error> {
         cmdline.push_line(Line::from_word("-deh", 1));
         pwads.dehs().iter().try_for_each(|deh| {
             deh.to_str()
-                .ok_or_else(|| error::Error::NonUtf8Path(deh.to_string_lossy().into_owned()))
+                .ok_or_else(|| Error::NonUtf8Path(deh.to_string_lossy().into_owned()))
                 .map(|deh| cmdline.push_line(Line::from_word(deh, 2)))
         })?;
     }
@@ -480,7 +477,7 @@ fn run() -> Result<(), error::Error> {
         cmdline.push_line(Line::from_word(
             demo[0]
                 .to_str()
-                .ok_or_else(|| error::Error::NonUtf8Path(demo[0].to_string_lossy().into_owned()))?,
+                .ok_or_else(|| Error::NonUtf8Path(demo[0].to_string_lossy().into_owned()))?,
             2,
         ));
     }
@@ -539,7 +536,7 @@ fn run() -> Result<(), error::Error> {
         .with_prompt("Press enter to launch Doom.")
         .allow_empty(true)
         .interact()
-        .map_err(error::Error::Io)?;
+        .map_err(Error::Io)?;
         run_doom(cmdline.iter_words())?;
     } else {
         batch_render(renderings, &cmdline, dump_dir)?;
