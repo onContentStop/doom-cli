@@ -3,7 +3,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use crate::doom_dir;
-use crate::Error;
+use crate::error::Error;
 
 pub(crate) fn absolute_path(path: impl AsRef<Path>) -> Result<PathBuf, Error> {
     let path = path.as_ref();

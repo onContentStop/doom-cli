@@ -1,6 +1,6 @@
 use itertools::Itertools;
 
-use crate::Error;
+use crate::error::Error;
 
 use std::path::PathBuf;
 

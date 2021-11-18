@@ -34,8 +34,8 @@ const EXAMPLE_ENGINES_FILE: &str = indoc!(
     "#
 );
 
+use crate::error::Error;
 use crate::util::absolute_path;
-use crate::Error;
 
 #[derive(Deserialize, Serialize, PartialEq, Eq, Clone, Copy)]
 #[allow(clippy::upper_case_acronyms)]

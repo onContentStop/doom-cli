@@ -1,6 +1,6 @@
+use crate::error::Error;
 use crate::score::score_entry;
 use crate::util::absolute_path;
-use crate::Error;
 use crate::FileType;
 use itertools::Itertools;
 use log::info;

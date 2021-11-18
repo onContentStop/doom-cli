@@ -1,9 +1,9 @@
 use std::path::Path;
 use std::path::PathBuf;
 
+use crate::error::Error;
 use crate::search::search_file;
 use crate::search::search_file_by;
-use crate::Error;
 use crate::FileType;
 use crate::ARG_SEPARATOR;
 

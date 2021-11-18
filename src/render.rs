@@ -17,9 +17,9 @@ use log::warn;
 
 use crate::cmd::CommandLine;
 use crate::cmd::Line;
+use crate::error::Error;
 use crate::job::Job;
 use crate::search::search_file;
-use crate::Error;
 use crate::FileType;
 
 static CANCELLABLE: AtomicBool = AtomicBool::new(false);
@@ -86,7 +86,7 @@ pub(crate) fn batch_render(
     mut renderings: Vec<Job>,
     cmdline: &CommandLine,
     dump_dir: PathBuf,
-) -> Result<(), crate::Error> {
+) -> Result<(), crate::error::Error> {
     let (job_sender, job_receiver) = channel::<Result<Job, Error>>();
     let (unpause_sender, unpause_receiver) = channel::<()>();
     ctrlc::set_handler(move || {
