@@ -24,12 +24,10 @@ use indoc::indoc;
 use itertools::Itertools;
 use log::error;
 use log::info;
-use log::trace;
 use log::warn;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use serde::Serialize;
-use walkdir::WalkDir;
 
 use crate::cmd::CommandLine;
 use crate::cmd::Line;
@@ -46,6 +44,7 @@ mod job;
 mod pwads;
 mod render;
 mod score;
+mod search;
 mod util;
 
 static CUSTOM_DOOM_DIR: Lazy<Mutex<Option<PathBuf>>> = Lazy::new(|| Mutex::new(None));
@@ -105,136 +104,6 @@ static DUMP_DIR: Lazy<PathBuf> = Lazy::new(|| {
 
 #[cfg(windows)]
 static DUMP_DIR: Lazy<PathBuf> = Lazy::new(|| PathBuf::from("E:").join("Videos"));
-
-fn search_files(list: &[String], ty: FileType) -> Result<Vec<PathBuf>, Error> {
-    list.iter()
-        .map(move |i| {
-            search_file_in_dirs_by(PathBuf::from(i), ty.get_search_dirs()?, |p| {
-                ["wad", "deh", "bex", "pk3", "pk7", "pke", "zip"].contains(
-                    &p.extension()
-                        .map(|ext| ext.to_string_lossy().to_string())
-                        .unwrap_or_default()
-                        .as_str(),
-                )
-            })
-        })
-        .map(|rr| rr.map(|r| r.into_iter().next().unwrap()))
-        .collect()
-}
-
-fn search_file(name: impl AsRef<str>, ty: FileType) -> Result<Vec<PathBuf>, Error> {
-    search_file_in_dirs_by(name.as_ref().into(), ty.get_search_dirs()?, |_| true)
-}
-
-fn search_file_by(
-    name: impl AsRef<str>,
-    ty: FileType,
-    predicate: impl Fn(&Path) -> bool,
-) -> Result<Vec<PathBuf>, Error> {
-    search_file_in_dirs_by(name.as_ref().into(), ty.get_search_dirs()?, predicate)
-}
-
-fn search_file_in_dirs_by(
-    name: PathBuf,
-    search_dirs: Vec<PathBuf>,
-    predicate: impl Fn(&Path) -> bool,
-) -> Result<Vec<PathBuf>, Error> {
-    if name.is_absolute() {
-        let mut parent = name.clone();
-        parent.pop();
-        search_file_in_dirs_by(
-            PathBuf::from(
-                name.file_stem()
-                    .ok_or_else(|| Error::NoFileStem(name.to_string_lossy().into_owned()))?,
-            ),
-            vec![parent],
-            predicate,
-        )
-    } else {
-        for search_dir in search_dirs {
-            info!(
-                "Searching for '{}' in '{}'",
-                name.to_string_lossy(),
-                search_dir.to_string_lossy()
-            );
-
-            let base_name = name
-                .file_stem()
-                .ok_or_else(|| Error::NoFileStem(name.to_string_lossy().into_owned()))?;
-            let extension = name.extension();
-            let ancestors = name
-                .ancestors()
-                .skip(1)
-                .map(|p| p.to_path_buf())
-                .collect::<Vec<_>>();
-
-            let search_dir = absolute_path(PathBuf::from(&search_dir))?;
-
-            struct SearchResult {
-                path: PathBuf,
-                score: usize,
-            }
-            let mut results = vec![];
-
-            for entry in WalkDir::new(search_dir).contents_first(true) {
-                let entry = match entry {
-                    Ok(e) => e,
-                    Err(e) => {
-                        info!("Stopping search due to an error: {}", e);
-                        break;
-                    }
-                };
-
-                if entry.path().is_dir() {
-                    continue;
-                }
-
-                if !predicate(entry.path()) {
-                    continue;
-                }
-
-                let entry_extension = entry
-                    .path()
-                    .extension()
-                    .map(|e| {
-                        e.to_str().ok_or_else(|| {
-                            Error::NonUtf8Path(entry.path().to_string_lossy().into_owned())
-                        })
-                    })
-                    .transpose()?
-                    .unwrap_or("");
-
-                let entry_score =
-                    score::score_entry(&entry, base_name, extension, entry_extension, &ancestors)?;
-                if entry_score > 1 {
-                    results.push(SearchResult {
-                        path: entry.path().into(),
-                        score: entry_score,
-                    });
-                }
-            }
-
-            if !results.is_empty() {
-                let results = results
-                    .into_iter()
-                    .sorted_by_key(|r| r.score)
-                    .map(|r| r.path)
-                    .rev()
-                    .collect::<Vec<_>>();
-                trace!(
-                    "Results: [{}]",
-                    results
-                        .iter()
-                        .map(|r| r.to_string_lossy())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-                return Ok(results);
-            }
-        }
-        Err(Error::FileNotFound(name.to_string_lossy().into_owned()))
-    }
-}
 
 fn select_between<P: AsRef<Path>>(
     search: impl AsRef<str>,
@@ -329,7 +198,7 @@ fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(
         error: e,
     })?;
 
-    let universal_pwads = search_files(&autoloads.universal, FileType::Pwad)?;
+    let universal_pwads = search::search_files(&autoloads.universal, FileType::Pwad)?;
     pwads.add_wads(universal_pwads);
 
     autoloads
@@ -343,12 +212,12 @@ fn autoload(pwads: &mut Pwads, engine: impl AsRef<Path>, iwad: &str) -> Result<(
                 .as_ref(),
         )
         .map(|engine_specific_pwads| {
-            pwads.add_wads(search_files(engine_specific_pwads, FileType::Pwad)?);
+            pwads.add_wads(search::search_files(engine_specific_pwads, FileType::Pwad)?);
             Result::<(), Error>::Ok(())
         })
         .unwrap_or(Ok(()))?;
     if let Some(iwad_specific_pwads) = autoloads.iwad.get(iwad) {
-        pwads.add_wads(search_files(iwad_specific_pwads, FileType::Pwad)?);
+        pwads.add_wads(search::search_files(iwad_specific_pwads, FileType::Pwad)?);
     }
     Ok(())
 }
@@ -433,7 +302,7 @@ fn run() -> Result<(), Error> {
             Some(i) => i,
             None => break None,
         };
-        let iwad_path = search_file(&iwad, FileType::Iwad).or_else(|e| {
+        let iwad_path = search::search_file(&iwad, FileType::Iwad).or_else(|e| {
             if let Error::FileNotFound(_) = e {
                 Ok(vec![])
             } else {
@@ -492,7 +361,7 @@ fn run() -> Result<(), Error> {
     let mut pwads = Pwads::new();
 
     if engine.supports_widescreen_assets {
-        if let Ok(assets) = search_file(
+        if let Ok(assets) = search::search_file(
             format!("{}_widescreen_assets.wad", iwad_noext),
             FileType::Pwad,
         ) {
@@ -518,7 +387,7 @@ fn run() -> Result<(), Error> {
     if let Some(arg_pwads_raw) = matches.value_of("pwads") {
         let mut arg_pwads = vec![];
         for pwad in arg_pwads_raw.split(ARG_SEPARATOR) {
-            let mut pwad_files = search_file_by(pwad, FileType::Pwad, |f| {
+            let mut pwad_files = search::search_file_by(pwad, FileType::Pwad, |f| {
                 f.extension()
                     .and_then(|ext| ext.to_str())
                     .map(|ext| {
@@ -528,7 +397,7 @@ fn run() -> Result<(), Error> {
                     .unwrap_or(false)
             })?;
             viddump_folder_name.extend(
-                search_file(pwad, FileType::Pwad)?
+                search::search_file(pwad, FileType::Pwad)?
                     .iter()
                     .map(|p| {
                         p.file_stem()
@@ -581,7 +450,7 @@ fn run() -> Result<(), Error> {
 
     if let Some(extra_pwads) = matches.value_of("extra-pwads") {
         for pwad in extra_pwads.split(ARG_SEPARATOR) {
-            let mut found = search_file(pwad, FileType::Pwad)?;
+            let mut found = search::search_file(pwad, FileType::Pwad)?;
             let i = if found.len() > 1 {
                 dialoguer::Select::new()
                     .items(
@@ -601,12 +470,12 @@ fn run() -> Result<(), Error> {
     }
 
     if matches.is_present("vanilla-weapons") {
-        pwads.add_wads(search_file("vsmooth.wad", FileType::Pwad)?);
-        pwads.add_dehs(search_file("vsmooth.deh", FileType::Pwad)?);
+        pwads.add_wads(search::search_file("vsmooth.wad", FileType::Pwad)?);
+        pwads.add_dehs(search::search_file("vsmooth.deh", FileType::Pwad)?);
     }
 
     if matches.is_present("3p") {
-        let sound_pack = search_file("3P Sound Pack.wad", FileType::Pwad)?;
+        let sound_pack = search::search_file("3P Sound Pack.wad", FileType::Pwad)?;
         pwads.add_wad(&sound_pack[0]);
     }
 
@@ -673,7 +542,10 @@ fn run() -> Result<(), Error> {
     }
 
     if let Some(playing_demo) = matches.value_of("play-demo") {
-        let demo = select_between(playing_demo, search_file(playing_demo, FileType::Demo)?)?;
+        let demo = select_between(
+            playing_demo,
+            search::search_file(playing_demo, FileType::Demo)?,
+        )?;
         if demo.is_empty() {
             error!("No such demo: {}", playing_demo);
             exit(-1);

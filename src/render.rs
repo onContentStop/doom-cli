@@ -18,14 +18,17 @@ use log::warn;
 use crate::cmd::CommandLine;
 use crate::cmd::Line;
 use crate::job::Job;
-use crate::search_file;
+use crate::search::search_file;
 use crate::Error;
 use crate::FileType;
 
 static CANCELLABLE: AtomicBool = AtomicBool::new(false);
 static PAUSED: AtomicBool = AtomicBool::new(false);
 
-pub(crate) fn collect_renderings(matches: &clap::ArgMatches, dump_dir: &Path) -> Result<Vec<Job>, Error> {
+pub(crate) fn collect_renderings(
+    matches: &clap::ArgMatches,
+    dump_dir: &Path,
+) -> Result<Vec<Job>, Error> {
     Ok(if let Some(rendering) = matches.value_of("render") {
         rendering
             .split(':')
