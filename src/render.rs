@@ -1,3 +1,5 @@
+use std::fs::create_dir_all;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::exit;
 use std::sync::atomic::AtomicBool;
@@ -9,6 +11,7 @@ use std::time::Duration;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Input;
 use itertools::Itertools;
+use log::error;
 use log::info;
 use log::warn;
 
@@ -21,6 +24,60 @@ use crate::FileType;
 
 static CANCELLABLE: AtomicBool = AtomicBool::new(false);
 static PAUSED: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn collect_renderings(matches: &clap::ArgMatches, dump_dir: &Path) -> Result<Vec<Job>, Error> {
+    Ok(if let Some(rendering) = matches.value_of("render") {
+        rendering
+            .split(':')
+            .flat_map(|demo| {
+                let results = search_file(demo, FileType::Demo).unwrap_or_else(|e| {
+                    error!("{}", e);
+                    exit(-1);
+                });
+                if results.is_empty() {
+                    error!("Failed to find demo '{}'", demo);
+                    exit(-1);
+                }
+                results
+            })
+            .map(|demo_name| {
+                let video_name = if dump_dir.exists() {
+                    Ok(())
+                } else {
+                    create_dir_all(&dump_dir).map_err(Error::Io)
+                }
+                .and_then(|_| {
+                    demo_name
+                        .file_stem()
+                        .ok_or_else(|| Error::NoFileStem(demo_name.to_string_lossy().into_owned()))
+                })
+                .map(|viddump_filename| {
+                    dump_dir.join({
+                        let mut viddump_filename = viddump_filename.to_os_string();
+                        viddump_filename.push(".mp4");
+                        viddump_filename
+                    })
+                });
+                video_name.map(|video_name| -> Result<Job, Error> {
+                    Ok(Job {
+                        name: demo_name
+                            .file_stem()
+                            .ok_or_else(|| {
+                                Error::NoFileStem(demo_name.to_string_lossy().into_owned())
+                            })?
+                            .to_str()
+                            .unwrap()
+                            .to_string(),
+                        video_name,
+                        demo_name,
+                    })
+                })?
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        vec![]
+    })
+}
 
 pub(crate) fn batch_render(
     mut renderings: Vec<Job>,

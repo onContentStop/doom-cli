@@ -756,58 +756,6 @@ fn run() -> Result<(), Error> {
         .join(iwad_base)
         .join(viddump_folder_name.join(","));
 
-    let renderings = if let Some(rendering) = matches.value_of("render") {
-        rendering
-            .split(':')
-            .flat_map(|demo| {
-                let results = search_file(demo, FileType::Demo).unwrap_or_else(|e| {
-                    error!("{}", e);
-                    exit(-1);
-                });
-                if results.is_empty() {
-                    error!("Failed to find demo '{}'", demo);
-                    exit(-1);
-                }
-                results
-            })
-            .map(|demo_name| {
-                let video_name = if dump_dir.exists() {
-                    Ok(())
-                } else {
-                    create_dir_all(&dump_dir).map_err(Error::Io)
-                }
-                .and_then(|_| {
-                    demo_name
-                        .file_stem()
-                        .ok_or_else(|| Error::NoFileStem(demo_name.to_string_lossy().into_owned()))
-                })
-                .map(|viddump_filename| {
-                    dump_dir.join({
-                        let mut viddump_filename = viddump_filename.to_os_string();
-                        viddump_filename.push(".mp4");
-                        viddump_filename
-                    })
-                });
-                video_name.map(|video_name| -> Result<Job, Error> {
-                    Ok(Job {
-                        name: demo_name
-                            .file_stem()
-                            .ok_or_else(|| {
-                                Error::NoFileStem(demo_name.to_string_lossy().into_owned())
-                            })?
-                            .to_str()
-                            .unwrap()
-                            .to_string(),
-                        video_name,
-                        demo_name,
-                    })
-                })?
-            })
-            .collect::<Result<Vec<_>, _>>()?
-    } else {
-        vec![]
-    };
-
     if let Some(passthrough) = matches.values_of("passthrough") {
         for arg in passthrough {
             cmdline.push_line(Line::from_word(arg, 1));
@@ -815,6 +763,7 @@ fn run() -> Result<(), Error> {
     }
 
     println!();
+    let renderings = render::collect_renderings(&matches, &dump_dir)?;
     if renderings.is_empty() {
         println!(
             "Command line: \n'\n{}\n'",
