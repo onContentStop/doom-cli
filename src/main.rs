@@ -45,6 +45,7 @@ mod engine;
 mod job;
 mod pwads;
 mod render;
+mod score;
 mod util;
 
 static CUSTOM_DOOM_DIR: Lazy<Mutex<Option<PathBuf>>> = Lazy::new(|| Mutex::new(None));
@@ -203,48 +204,12 @@ fn search_file_in_dirs_by(
                     .transpose()?
                     .unwrap_or("");
 
-                let mut score = 0;
-                let stem = entry.path().file_stem().ok_or_else(|| {
-                    Error::NoFileStem(entry.path().to_string_lossy().into_owned())
-                })?;
-                let stems_eq = stem
-                    .to_string_lossy()
-                    .eq_ignore_ascii_case(base_name.to_string_lossy().as_ref());
-                let stems_case_eq = stem.to_string_lossy() == base_name.to_string_lossy();
-                let extensions_match = extension
-                    .map(|ext| ext.to_string_lossy().eq_ignore_ascii_case(entry_extension))
-                    .unwrap_or(true);
-                let ancestors_eq = ancestors
-                    .iter()
-                    .zip(entry.path().ancestors().skip(1))
-                    .all_equal();
-                if stems_eq {
-                    // doom2
-                    score += 2;
-                }
-                if stems_case_eq {
-                    // DOOM2
-                    score += 5;
-                }
-                if extensions_match {
-                    // Example.wad
-                    score += 1;
-                    if stems_eq {
-                        // doom2.wad
-                        score += 10;
-                    }
-                    if stems_case_eq {
-                        score += 5;
-                    }
-                }
-                if stems_eq && ancestors_eq {
-                    // iwad/doom2
-                    score += 20;
-                }
-                if score > 1 {
+                let entry_score =
+                    score::score_entry(&entry, base_name, extension, entry_extension, &ancestors)?;
+                if entry_score > 1 {
                     results.push(SearchResult {
                         path: entry.path().into(),
-                        score,
+                        score: entry_score,
                     });
                 }
             }
