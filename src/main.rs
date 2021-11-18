@@ -41,52 +41,16 @@ use crate::cmd::Line;
 use crate::engine::read_known_engines;
 use crate::engine::DoomEngineKind;
 use crate::job::Job;
+use crate::pwads::Pwads;
 use crate::util::absolute_path;
 
 mod cmd;
 mod engine;
 mod job;
+mod pwads;
 mod util;
 
 static CUSTOM_DOOM_DIR: Lazy<Mutex<Option<PathBuf>>> = Lazy::new(|| Mutex::new(None));
-
-struct Pwads {
-    wads: Vec<PathBuf>,
-    dehs: Vec<PathBuf>,
-}
-
-impl Pwads {
-    fn new() -> Self {
-        Self {
-            wads: vec![],
-            dehs: vec![],
-        }
-    }
-
-    fn add_wads(&mut self, mut wads: Vec<PathBuf>) {
-        self.wads.append(&mut wads);
-    }
-
-    fn add_wad(&mut self, wad: impl AsRef<Path>) {
-        self.wads.push(wad.as_ref().to_owned());
-    }
-
-    fn add_dehs(&mut self, mut dehs: Vec<PathBuf>) {
-        self.dehs.append(&mut dehs);
-    }
-
-    fn add_deh(&mut self, deh: PathBuf) {
-        self.dehs.push(deh);
-    }
-
-    fn wads(&self) -> &[PathBuf] {
-        &self.wads
-    }
-
-    fn dehs(&self) -> &[PathBuf] {
-        &self.dehs
-    }
-}
 
 enum FileType {
     Iwad,
