@@ -34,6 +34,8 @@ use crate::cmd::Line;
 use crate::engine::read_known_engines;
 use crate::engine::DoomEngineKind;
 use crate::job::Job;
+use crate::pwads::parse_arg_pwads;
+use crate::pwads::parse_extra_pwads;
 use crate::pwads::Pwads;
 use crate::render::batch_render;
 use crate::util::absolute_path;
@@ -385,88 +387,11 @@ fn run() -> Result<(), Error> {
     let mut viddump_folder_name = vec![];
 
     if let Some(arg_pwads_raw) = matches.value_of("pwads") {
-        let mut arg_pwads = vec![];
-        for pwad in arg_pwads_raw.split(ARG_SEPARATOR) {
-            let mut pwad_files = search::search_file_by(pwad, FileType::Pwad, |f| {
-                f.extension()
-                    .and_then(|ext| ext.to_str())
-                    .map(|ext| {
-                        ["wad", "pk3", "pk7", "pke", "zip", "deh", "bex"]
-                            .contains(&ext.to_lowercase().as_str())
-                    })
-                    .unwrap_or(false)
-            })?;
-            viddump_folder_name.extend(
-                search::search_file(pwad, FileType::Pwad)?
-                    .iter()
-                    .map(|p| {
-                        p.file_stem()
-                            .ok_or_else(|| Error::NoFileStem(p.to_string_lossy().into_owned()))
-                            .and_then(|p| {
-                                p.to_str().ok_or_else(|| {
-                                    Error::NonUtf8Path(p.to_string_lossy().into_owned())
-                                })
-                            })
-                            .map(|p| p.to_owned())
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
-            );
-            let i = if pwad_files.len() > 1 {
-                dialoguer::Select::new()
-                    .items(
-                        pwad_files
-                            .iter()
-                            .map(|p| p.to_string_lossy())
-                            .collect::<Vec<_>>()
-                            .as_ref(),
-                    )
-                    .with_prompt(
-                        format!("Multiple results were found for {}. Select one.", pwad).as_str(),
-                    )
-                    .interact()
-                    .map_err(Error::Io)?
-            } else {
-                0
-            };
-            arg_pwads.push(pwad_files.remove(i));
-        }
-        for pwad in arg_pwads {
-            match pwad
-                .extension()
-                .ok_or_else(|| Error::NoFileExtension(pwad.to_string_lossy().into_owned()))
-                .and_then(|ext| {
-                    ext.to_str()
-                        .ok_or_else(|| Error::NonUtf8Path(ext.to_string_lossy().into_owned()))
-                })?
-                .to_lowercase()
-                .as_str()
-            {
-                "wad" | "pk3" | "zip" | "pk7" | "pke" => pwads.add_wad(pwad),
-                "deh" | "bex" => pwads.add_deh(pwad),
-                _ => unreachable!(),
-            }
-        }
+        parse_arg_pwads(arg_pwads_raw, &mut viddump_folder_name, &mut pwads)?;
     }
 
-    if let Some(extra_pwads) = matches.value_of("extra-pwads") {
-        for pwad in extra_pwads.split(ARG_SEPARATOR) {
-            let mut found = search::search_file(pwad, FileType::Pwad)?;
-            let i = if found.len() > 1 {
-                dialoguer::Select::new()
-                    .items(
-                        &found
-                            .iter()
-                            .map(|p| p.to_string_lossy())
-                            .collect::<Vec<_>>(),
-                    )
-                    .with_prompt("Multiple candidates were found. Select one.")
-                    .interact()
-                    .map_err(Error::Io)?
-            } else {
-                0
-            };
-            pwads.add_wad(found.remove(i));
-        }
+    if let Some(extra_pwads_raw) = matches.value_of("extra-pwads") {
+        parse_extra_pwads(extra_pwads_raw, &mut pwads)?;
     }
 
     if matches.is_present("vanilla-weapons") {
