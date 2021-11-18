@@ -44,8 +44,8 @@ mod cmd;
 mod engine;
 mod job;
 mod pwads;
-mod util;
 mod render;
+mod util;
 
 static CUSTOM_DOOM_DIR: Lazy<Mutex<Option<PathBuf>>> = Lazy::new(|| Mutex::new(None));
 
@@ -829,9 +829,7 @@ fn run() -> Result<(), Error> {
         .interact()
         .map_err(Error::Io)?;
         run_doom(cmdline.iter_words())?;
-    }
-
-    if !renderings.is_empty() {
+    } else {
         batch_render(renderings, &cmdline, dump_dir)?;
     }
     Ok(())
