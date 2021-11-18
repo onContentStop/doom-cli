@@ -128,11 +128,7 @@ fn run_doom<'l>(mut cmdline: impl Iterator<Item = &'l str>) -> Result<(), Error>
     if !binary.exists() {
         return Err(Error::FileNotFound(binary.to_string_lossy().into_owned()));
     }
-    let binary_dir = {
-        let mut d = binary.clone();
-        d.pop();
-        d
-    };
+    let binary_dir = dirname(&binary);
     let args = cmdline
         .filter_map(|arg| {
             let trimmed = arg.trim();
@@ -149,6 +145,12 @@ fn run_doom<'l>(mut cmdline: impl Iterator<Item = &'l str>) -> Result<(), Error>
         .status()
         .map(|_| ())
         .map_err(Error::RunningDoom)
+}
+
+fn dirname(binary: &Path) -> PathBuf {
+    let mut d = binary.to_owned();
+    d.pop();
+    d
 }
 
 #[derive(Serialize, Deserialize)]
