@@ -81,7 +81,7 @@ fn demo_dir() -> Result<PathBuf, Error> {
 }
 
 #[cfg(unix)]
-static DUMP_DIR: Lazy<PathBuf> = Lazy::new(|| {
+fn dump_dir() -> PathBuf {
     let raw_output = String::from_utf8(
         Command::new("findmnt")
             .arg("/dev/sdd1")
@@ -95,10 +95,12 @@ static DUMP_DIR: Lazy<PathBuf> = Lazy::new(|| {
         exit(-1);
     });
     second_line.split_whitespace().next().unwrap().into()
-});
+}
 
 #[cfg(windows)]
-static DUMP_DIR: Lazy<PathBuf> = Lazy::new(|| PathBuf::from("E:").join("Videos"));
+fn dump_dir() -> PathBuf {
+    PathBuf::from("E:").join("Videos")
+}
 
 fn select_between<P: AsRef<Path>>(
     search: impl AsRef<str>,
@@ -437,11 +439,6 @@ fn run() -> Result<(), Error> {
         cmdline.push_line(Line::from_word("-respawn", 1));
     }
 
-    let dump_dir = DUMP_DIR
-        .join("Videos")
-        .join(iwad_base)
-        .join(viddump_folder_name.join(","));
-
     if let Some(passthrough) = matches.values_of("passthrough") {
         for arg in passthrough {
             cmdline.push_line(Line::from_word(arg, 1));
@@ -449,8 +446,14 @@ fn run() -> Result<(), Error> {
     }
 
     println!();
-    let renderings = render::collect_renderings(&matches, &dump_dir)?;
-    if renderings.is_empty() {
+    if let Some(render_matches) = matches.value_of("render") {
+        let dump_dir = dump_dir()
+            .join("Videos")
+            .join(iwad_base)
+            .join(viddump_folder_name.join(","));
+        let renderings = render::collect_renderings(&render_matches, &dump_dir)?;
+        batch_render(renderings, &cmdline, dump_dir)?;
+    } else {
         println!(
             "Command line: \n'\n{}\n'",
             cmdline.iter_lines().map(|l| l.iter().join(" ")).join("\n")
@@ -464,8 +467,6 @@ fn run() -> Result<(), Error> {
         .interact()
         .map_err(Error::Io)?;
         run_doom(cmdline.iter_words())?;
-    } else {
-        batch_render(renderings, &cmdline, dump_dir)?;
     }
     Ok(())
 }
