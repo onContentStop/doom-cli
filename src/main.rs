@@ -163,6 +163,7 @@ fn run() -> Result<(), Error> {
             .arg(Arg::with_name("fast").short("f").long("fast").help("Enable fast monsters"))
             .arg(Arg::with_name("geometry").short("g").long("geometry").help("Set the screen resolution to WxH").long_help("Set the screen resolution to WxH; only supported on Boom-derived sourceports.").value_name("GEOM"))
             .arg(Arg::with_name("iwad").short("i").long("iwad").help("Set the game's IWAD").value_name("WAD"))
+            .arg(Arg::with_name("no-confirm").long("no-confirm").short("n").help("Don't ask for confirmation before running Doom"))
             .arg(Arg::with_name("no-monsters").long("no-monsters").help("Play the game with no monsters"))
             .arg(Arg::with_name("pistol-start").long("pistol-start").help("Play each level from a pistol start").long_help("Play each level from a pistol start. Currently only works with Crispy Doom and PrBoom+."))
             .arg(Arg::with_name("play-demo").short("d").long("play-demo").help("Play back DEMO").value_name("DEMO"))
@@ -455,14 +456,16 @@ fn run() -> Result<(), Error> {
             "Command line: \n'\n{}\n'",
             cmdline.iter_lines().map(|l| l.iter().join(" ")).join("\n")
         );
-        Input::<String>::with_theme(&ColorfulTheme {
-            prompt_prefix: style("*".into()).yellow(),
-            ..Default::default()
-        })
-        .with_prompt("Press enter to launch Doom.")
-        .allow_empty(true)
-        .interact()
-        .map_err(Error::Io)?;
+        if !matches.is_present("no-confirm") {
+            Input::<String>::with_theme(&ColorfulTheme {
+                prompt_prefix: style("*".into()).yellow(),
+                ..Default::default()
+            })
+            .with_prompt("Press enter to launch Doom.")
+            .allow_empty(true)
+            .interact()
+            .map_err(Error::Io)?;
+        }
         run_doom(cmdline.iter_words())?;
     } else {
         batch_render(renderings, &cmdline, dump_dir)?;
