@@ -452,7 +452,7 @@ fn run() -> Result<(), Error> {
             .join("Videos")
             .join(iwad_base)
             .join(viddump_folder_name.join(","));
-        let renderings = render::collect_renderings(&render_matches, &dump_dir)?;
+        let renderings = render::collect_renderings(render_matches, &dump_dir)?;
         batch_render(renderings, &cmdline, dump_dir)?;
     } else {
         println!(
