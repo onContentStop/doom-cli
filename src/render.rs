@@ -25,11 +25,8 @@ use crate::FileType;
 static CANCELLABLE: AtomicBool = AtomicBool::new(false);
 static PAUSED: AtomicBool = AtomicBool::new(false);
 
-pub(crate) fn collect_renderings(
-    matches: &str,
-    dump_dir: &Path,
-) -> Result<Vec<Job>, Error> {
-    Ok(matches
+pub(crate) fn collect_renderings(matches: &str, dump_dir: &Path) -> Result<Vec<Job>, Error> {
+    matches
         .split(':')
         .flat_map(|demo| {
             let results = search_file(demo, FileType::Demo).unwrap_or_else(|e| {
@@ -73,7 +70,7 @@ pub(crate) fn collect_renderings(
                 })
             })?
         })
-        .collect::<Result<Vec<_>, _>>()?)
+        .collect::<Result<Vec<_>, _>>()
 }
 
 pub(crate) fn batch_render(
