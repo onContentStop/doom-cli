@@ -349,7 +349,7 @@ fn run() -> Result<(), Error> {
         })?;
     }
 
-    let complevel = matches.value_of("compatibility-level").unwrap_or("9");
+    let complevel = matches.value_of("compatibility-level").unwrap_or("21");
     cmdline.push_line(Line::from_words(
         &[String::from("-complevel"), complevel.to_string()],
         1,
