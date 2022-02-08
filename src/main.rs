@@ -9,6 +9,7 @@ use std::sync::Mutex;
 use clap::App;
 use clap::AppSettings;
 use clap::Arg;
+use clap::ColorChoice;
 use dialoguer::console::style;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Confirm;
@@ -155,31 +156,31 @@ fn run() -> Result<(), Error> {
             .version("0.1.0")
             .before_help("This Doom launcher allows shortcuts to the many long-winded options that Doom engines accept.")
             .setting(AppSettings::TrailingVarArg)
-            .setting(AppSettings::ColorAuto)
-            .arg(Arg::with_name("3p").long("3p").help("Add the 3P Sound Pack"))
-            .arg(Arg::with_name("compatibility-level").short("c").long("compatibility-level").help("Set the compatibility level to LEVEL").value_name("LEVEL"))
-            .arg(Arg::with_name("debug").short("G").long("debug").help("Run Doom under a debugger"))
-            .arg(Arg::with_name("doom-dir").long("doom-dir").help("Set a custom Doom configuration directory"))
-            .arg(Arg::with_name("engine").short("e").long("engine").help("Play the game with ENGINE instead of DSDA Doom").value_name("ENGINE"))
-            .arg(Arg::with_name("extra-pwads").short("x").long("extra-pwads").help("Add PWADS to the game, silently").long_help("Silently means that when rendering a demo (with --render), the program will not add these PWADs to the folder name.").value_name("WAD").multiple(true))
-            .arg(Arg::with_name("fast").short("f").long("fast").help("Enable fast monsters"))
-            .arg(Arg::with_name("geometry").short("g").long("geometry").help("Set the screen resolution to WxH").long_help("Set the screen resolution to WxH; only supported on Boom-derived sourceports.").value_name("GEOM"))
-            .arg(Arg::with_name("iwad").short("i").long("iwad").help("Set the game's IWAD").value_name("WAD"))
-            .arg(Arg::with_name("no-confirm").long("no-confirm").short("n").help("Don't ask for confirmation before running Doom"))
-            .arg(Arg::with_name("no-monsters").long("no-monsters").help("Play the game with no monsters"))
-            .arg(Arg::with_name("pistol-start").long("pistol-start").help("Play each level from a pistol start").long_help("Play each level from a pistol start. Currently only works with Crispy Doom and PrBoom+."))
-            .arg(Arg::with_name("play-demo").short("d").long("play-demo").help("Play back DEMO").value_name("DEMO"))
-            .arg(Arg::with_name("pwads").short("p").long("pwads").help("Add PWADS to the game").multiple(true).value_name("WAD"))
-            .arg(Arg::with_name("record").short("r").long("record").help("Record a demo to DEMO").value_name("DEMO").long_help("Record a demo to DEMO, relative to ~/doom/demo."))
-            .arg(Arg::with_name("record-from-to").long("record-from-to").number_of_values(2).help("Play back FROM, allowing you to rewrite its ending to TO").long_help("Play FROM. You are allowed to press the join key at any time to begin recording your inputs from the current frame. Whenever you quit the game, the final result will be written to TO.").value_names(&["FROM", "TO"]))
-            .arg(Arg::with_name("render").short("R").long("render").help("Render a demo as a video").long_help("The video will be placed in /extra/Videos/{iwad}/{pwads}/{demoname}.").value_name("DEMO"))
-            .arg(Arg::with_name("respawn").long("respawn").help("Enable respawning monsters"))
-            .arg(Arg::with_name("short-tics").long("short-tics").help("Play the game with short tics instead of long tics"))
-            .arg(Arg::with_name("skill").short("s").long("skill").help("Set the game's skill level by a number").value_name("SKILL"))
-            .arg(Arg::with_name("vanilla-weapons").long("vanilla-weapons").help("Load the game with smooth weapon animations"))
-            .arg(Arg::with_name("video-mode").short("v").long("video-mode").help("Set the video mode of the game (software, hardware)").long_help("Only supported on Boom-derived sourceports.").value_name("MODE"))
-            .arg(Arg::with_name("warp").short("w").long("warp").help("Start the game at a specific level number").value_name("LEVEL"))
-            .arg(Arg::with_name("passthrough").multiple(true))
+            .color(ColorChoice::Auto)
+            .arg(Arg::new("3p").long("3p").help("Add the 3P Sound Pack"))
+            .arg(Arg::new("compatibility-level").short('c').long("compatibility-level").help("Set the compatibility level to LEVEL").value_name("LEVEL"))
+            .arg(Arg::new("debug").short('G').long("debug").help("Run Doom under a debugger"))
+            .arg(Arg::new("doom-dir").long("doom-dir").help("Set a custom Doom configuration directory"))
+            .arg(Arg::new("engine").short('e').long("engine").help("Play the game with ENGINE instead of DSDA Doom").value_name("ENGINE"))
+            .arg(Arg::new("extra-pwads").short('x').long("extra-pwads").help("Add PWADS to the game, silently").long_help("Silently means that when rendering a demo (with --render), the program will not add these PWADs to the folder name.").value_name("WAD").multiple_values(true))
+            .arg(Arg::new("fast").short('f').long("fast").help("Enable fast monsters"))
+            .arg(Arg::new("geometry").short('g').long("geometry").help("Set the screen resolution to WxH").long_help("Set the screen resolution to WxH; only supported on Boom-derived sourceports.").value_name("GEOM"))
+            .arg(Arg::new("iwad").short('i').long("iwad").help("Set the game's IWAD").value_name("WAD"))
+            .arg(Arg::new("no-confirm").long("no-confirm").short('n').help("Don't ask for confirmation before running Doom"))
+            .arg(Arg::new("no-monsters").long("no-monsters").help("Play the game with no monsters"))
+            .arg(Arg::new("pistol-start").long("pistol-start").help("Play each level from a pistol start").long_help("Play each level from a pistol start. Currently only works with Crispy Doom and PrBoom+."))
+            .arg(Arg::new("play-demo").short('d').long("play-demo").help("Play back DEMO").value_name("DEMO"))
+            .arg(Arg::new("pwads").short('p').long("pwads").help("Add PWADS to the game").multiple_values(true).value_name("WAD"))
+            .arg(Arg::new("record").short('r').long("record").help("Record a demo to DEMO").value_name("DEMO").long_help("Record a demo to DEMO, relative to ~/doom/demo."))
+            .arg(Arg::new("record-from-to").long("record-from-to").number_of_values(2).help("Play back FROM, allowing you to rewrite its ending to TO").long_help("Play FROM. You are allowed to press the join key at any time to begin recording your inputs from the current frame. Whenever you quit the game, the final result will be written to TO.").value_names(&["FROM", "TO"]))
+            .arg(Arg::new("render").short('R').long("render").help("Render a demo as a video").long_help("The video will be placed in /extra/Videos/{iwad}/{pwads}/{demoname}.").value_name("DEMO"))
+            .arg(Arg::new("respawn").long("respawn").help("Enable respawning monsters"))
+            .arg(Arg::new("short-tics").long("short-tics").help("Play the game with short tics instead of long tics"))
+            .arg(Arg::new("skill").short('s').long("skill").help("Set the game's skill level by a number").value_name("SKILL"))
+            .arg(Arg::new("vanilla-weapons").long("vanilla-weapons").help("Load the game with smooth weapon animations"))
+            .arg(Arg::new("video-mode").short('v').long("video-mode").help("Set the video mode of the game (software, hardware)").long_help("Only supported on Boom-derived sourceports.").value_name("MODE"))
+            .arg(Arg::new("warp").short('w').long("warp").help("Start the game at a specific level number").value_name("LEVEL"))
+            .arg(Arg::new("passthrough").multiple_values(true))
             ;
 
     let matches = app.get_matches();
@@ -359,11 +360,13 @@ fn run() -> Result<(), Error> {
         cmdline.push_line(Line::from_word("-pistolstart", 1));
     }
 
-    let vidmode = matches.value_of("video-mode").unwrap_or("GL");
-    cmdline.push_line(Line::from_words(&["-vidmode", vidmode], 1));
+    if let Some(vidmode) = matches.value_of("video-mode") {
+        cmdline.push_line(Line::from_words(&["-vidmode", vidmode], 1));
+    }
 
-    let geom = matches.value_of("geometry").unwrap_or("2560x1440F");
-    cmdline.push_line(Line::from_words(&["-geom", geom], 1));
+    if let Some(geom) = matches.value_of("geometry") {
+        cmdline.push_line(Line::from_words(&["-geom", geom], 1));
+    }
 
     let skill_param = if engine.kind == DoomEngineKind::ZDoom {
         &["+skill", "3"]
