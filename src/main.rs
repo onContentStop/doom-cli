@@ -1,6 +1,11 @@
 use std::path::PathBuf;
 
 use clap::StructOpt;
+use dialoguer::theme::ColorfulTheme;
+
+mod error;
+
+use error::Error;
 
 #[derive(clap::Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -166,5 +171,30 @@ struct Args {
 }
 
 fn main() {
-    dbg!(Args::parse());
+    if let Err(e) = run() {
+        eprintln!("ERROR: {}", e);
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), Error> {
+    let args = Args::parse();
+
+    if !args.doom_dir.exists() {
+        let answer = dialoguer::Confirm::with_theme(&ColorfulTheme::default())
+            .with_prompt(format!(
+                "You don't have a Doom directory at {}. Create it?",
+                args.doom_dir.to_string_lossy()
+            ))
+            .interact()
+            .map_err(Error::Io)?;
+        if answer {
+            std::fs::create_dir_all(&args.doom_dir).map_err(Error::Io)?;
+        } else {
+            eprintln!("ERROR: Cannot continue. See --help for details on configuring the Doom directory.");
+            return Err(Error::NoDoomDir);
+        }
+    }
+
+    Ok(())
 }
