@@ -1,26 +1,7 @@
 [package]
-name = "playdoom"
-version = "0.6.0"
-authors = ["kyle.coffey <kyle.coffey@tamu.edu>"]
-edition = "2018"
+name = "doom-cli"
+version = "2.0.0"
+edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-clap = "3.0.14"
-itertools = "0.10.3"
-lazy_static = "1.4.0"
-dirs = "4.0.0"
-once_cell = "1.9.0"
-walkdir = "2.3.2"
-serde = { version = "1.0.136", features = ["derive"] }
-anyhow = "1.0.53"
-ctrlc = "3.2.1"
-dialoguer = "0.9.0"
-path-clean = "0.1.0"
-indoc = "1.0.3"
-thiserror = "1.0.30"
-pretty_env_logger = "0.4.0"
-log = "0.4.14"
-tokio = { version = "1.16.1", features = ["full"] }
-indicatif = "0.16.2"
-ron = "0.7.0"
+clap = { version = "3.0.14", features = ["derive", "env"] }

@@ -1,486 +1,170 @@
-use std::fs::create_dir_all;
-use std::path::Path;
 use std::path::PathBuf;
-use std::process::exit;
-use std::process::Command;
-use std::str::FromStr;
-use std::sync::Mutex;
 
-use clap::App;
-use clap::AppSettings;
-use clap::Arg;
-use clap::ColorChoice;
-use dialoguer::console::style;
-use dialoguer::theme::ColorfulTheme;
-use dialoguer::Confirm;
-use dialoguer::Input;
-use dialoguer::MultiSelect;
-use itertools::Itertools;
-use log::error;
-use log::info;
-use log::warn;
-use once_cell::sync::Lazy;
+use clap::StructOpt;
 
-use crate::cmd::CommandLine;
-use crate::cmd::Line;
-use crate::engine::read_known_engines;
-use crate::engine::DoomEngineKind;
-use crate::error::Error;
-use crate::pwads::parse_arg_pwads;
-use crate::pwads::parse_extra_pwads;
-use crate::pwads::Pwads;
-use crate::render::batch_render;
-use crate::util::absolute_path;
+#[derive(clap::Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+/// Provides shortcuts to the many long-winded options that Doom engines accept.
+struct Args {
+    #[clap(short, long, value_name = "LEVEL", default_value_t = 21)]
+    /// Set the compatibility level to LEVEL. Only relevant for PrBoom-like engines.
+    compatibility_level: u8,
 
-mod autoload;
-mod cmd;
-mod engine;
-mod error;
-mod job;
-mod pwads;
-mod render;
-mod score;
-mod search;
-mod util;
+    #[clap(short = 'G', long)]
+    /// Run Doom under a debugger.
+    debug: bool,
 
-static CUSTOM_DOOM_DIR: Lazy<Mutex<Option<PathBuf>>> = Lazy::new(|| Mutex::new(None));
+    #[clap(
+        long,
+        env = "DOOM_DIR",
+        value_name = "DIR",
+        default_value = concat!(env!("HOME"), "/doom")
+    )]
+    /// Change the location of your Doom configuration.
+    doom_dir: PathBuf,
 
-enum FileType {
-    Iwad,
-    Pwad,
-    Demo,
-}
+    #[clap(short, long)]
+    /// Play the game with ENGINE instead of the first one in the configuration.
+    engine: Option<String>,
 
-impl FileType {
-    fn get_search_dirs(&self) -> Result<Vec<PathBuf>, Error> {
-        vec![doom_dir(), Ok(public_doom_dir())]
-            .into_iter()
-            .collect()
-    }
-}
+    #[clap(short = 'x', long, value_name = "WAD", multiple_values = true)]
+    /// Add "extra" PWADs to the game.
+    ///
+    /// The difference between this and the '--pwads' parameter is that extra pwads are not
+    /// used when rendering demos to video.
+    extra_pwads: Vec<PathBuf>,
 
-const ARG_SEPARATOR: char = ',';
+    #[clap(short, long)]
+    /// Enable fast monsters.
+    fast: bool,
 
-fn home_dir() -> Result<PathBuf, Error> {
-    dirs::home_dir().ok_or(Error::Homeless)
-}
+    #[clap(short, long)]
+    /// Set the screen resolution to 'WxH'.
+    ///
+    /// Only supported on Boom-derived sourceports, such as PrBoom+.
+    geometry: Option<String>,
 
-fn doom_dir() -> Result<PathBuf, Error> {
-    if let Some(dir) = CUSTOM_DOOM_DIR.lock().unwrap().as_ref() {
-        Ok(dir.clone())
-    } else {
-        home_dir().map(|h| h.join("doom"))
-    }
-}
+    #[clap(short, long, value_name = "WAD", default_value = "DOOM2.WAD")]
+    /// Set the IWAD to use.
+    iwad: PathBuf,
 
-fn public_doom_dir() -> PathBuf {
-    PathBuf::from("/public/doom")
-}
+    #[clap(short, long)]
+    /// Don't ask for confirmation before running Doom.
+    no_confirm: bool,
 
-fn demo_dir() -> Result<PathBuf, Error> {
-    doom_dir().map(|d| d.join("demo"))
-}
+    #[clap(long)]
+    /// Play the game with no monsters.
+    no_monsters: bool,
 
-#[cfg(unix)]
-fn dump_dir() -> PathBuf {
-    let raw_output = String::from_utf8(
-        Command::new("findmnt")
-            .arg("/dev/sdd1")
-            .output()
-            .unwrap()
-            .stdout,
-    )
-    .unwrap();
-    let second_line = raw_output.lines().nth(1).unwrap_or_else(|| {
-        error!("Please mount /dev/sdd1. I beg you.");
-        exit(-1);
-    });
-    second_line.split_whitespace().next().unwrap().into()
-}
+    #[clap(long)]
+    /// Attempt to force pistol start on each level.
+    ///
+    /// Currently only works on Crispy Doom and PrBoom+.
+    pistol_start: bool,
 
-#[cfg(windows)]
-fn dump_dir() -> PathBuf {
-    PathBuf::from("E:").join("Videos")
-}
+    #[clap(short = 'd', long, value_name = "DEMO")]
+    /// Play back a DEMO you previously recorded.
+    ///
+    /// See '-r'.
+    play_demo: Option<PathBuf>,
 
-fn select_between<P: AsRef<Path>>(
-    search: impl AsRef<str>,
-    options: impl AsRef<[P]>,
-) -> Result<Vec<PathBuf>, Error> {
-    MultiSelect::new()
-        .with_prompt(format!("Multiple files were found for the search term {}. Please select one or more of the following:", search.as_ref()))
-        .items(
-            &options
-                .as_ref()
-                .iter()
-                .map(|opt| opt.as_ref().to_string_lossy())
-                .collect::<Vec<_>>(),
-        )
-        .interact()
-        .map(|indices| indices.iter().map(|i| options.as_ref()[*i].as_ref().to_owned()).collect())
-        .map_err(Error::Io)
-}
+    #[clap(short, long, multiple_values = true, value_name = "WAD")]
+    /// Add PWADs to the game.
+    pwads: Vec<PathBuf>,
 
-fn run_doom<'l>(mut cmdline: impl Iterator<Item = &'l str>) -> Result<(), Error> {
-    let binary = PathBuf::from(cmdline.next().unwrap());
-    if !binary.exists() {
-        return Err(Error::FileNotFound(binary.to_string_lossy().into_owned()));
-    }
-    let binary_dir = dirname(&binary);
-    let args = cmdline
-        .filter_map(|arg| {
-            let trimmed = arg.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
-        })
-        .collect::<Vec<_>>();
-    Command::new(binary)
-        .args(args)
-        .current_dir(binary_dir)
-        .status()
-        .map(|_| ())
-        .map_err(Error::RunningDoom)
-}
+    #[clap(
+        short,
+        long,
+        value_name = "DEMO",
+        conflicts_with_all = &["record-from-to", "render", "render-with-name"]
+    )]
+    /// Record a DEMO.
+    ///
+    /// The path you provide is relative to $DOOM_DIR/demo.
+    record: Option<PathBuf>,
 
-fn dirname(binary: &Path) -> PathBuf {
-    let mut d = binary.to_owned();
-    d.pop();
-    d
-}
+    #[clap(
+        long,
+        number_of_values = 2,
+        value_names = &["FROM", "TO"],
+        conflicts_with_all = &["record", "render", "render-with-name"]
+    )]
+    /// Play back FROM while simultaneously recording to TO.
+    ///
+    /// This is useful for TAS demos because you may interrupt the playback and begin playing
+    /// at any time.
+    record_from_to: Option<Vec<PathBuf>>,
 
-fn run() -> Result<(), Error> {
-    let app = App::new("Command-line Doom launcher")
-            .version("0.1.0")
-            .before_help("This Doom launcher allows shortcuts to the many long-winded options that Doom engines accept.")
-            .setting(AppSettings::TrailingVarArg)
-            .color(ColorChoice::Auto)
-            .arg(Arg::new("3p").long("3p").help("Add the 3P Sound Pack"))
-            .arg(Arg::new("compatibility-level").short('c').long("compatibility-level").help("Set the compatibility level to LEVEL").value_name("LEVEL"))
-            .arg(Arg::new("debug").short('G').long("debug").help("Run Doom under a debugger"))
-            .arg(Arg::new("doom-dir").long("doom-dir").help("Set a custom Doom configuration directory"))
-            .arg(Arg::new("engine").short('e').long("engine").help("Play the game with ENGINE instead of DSDA Doom").value_name("ENGINE"))
-            .arg(Arg::new("extra-pwads").short('x').long("extra-pwads").help("Add PWADS to the game, silently").long_help("Silently means that when rendering a demo (with --render), the program will not add these PWADs to the folder name.").value_name("WAD").multiple_values(true))
-            .arg(Arg::new("fast").short('f').long("fast").help("Enable fast monsters"))
-            .arg(Arg::new("geometry").short('g').long("geometry").help("Set the screen resolution to WxH").long_help("Set the screen resolution to WxH; only supported on Boom-derived sourceports.").value_name("GEOM"))
-            .arg(Arg::new("iwad").short('i').long("iwad").help("Set the game's IWAD").value_name("WAD"))
-            .arg(Arg::new("no-confirm").long("no-confirm").short('n').help("Don't ask for confirmation before running Doom"))
-            .arg(Arg::new("no-monsters").long("no-monsters").help("Play the game with no monsters"))
-            .arg(Arg::new("pistol-start").long("pistol-start").help("Play each level from a pistol start").long_help("Play each level from a pistol start. Currently only works with Crispy Doom and PrBoom+."))
-            .arg(Arg::new("play-demo").short('d').long("play-demo").help("Play back DEMO").value_name("DEMO"))
-            .arg(Arg::new("pwads").short('p').long("pwads").help("Add PWADS to the game").multiple_values(true).value_name("WAD"))
-            .arg(Arg::new("record").short('r').long("record").help("Record a demo to DEMO").value_name("DEMO").long_help("Record a demo to DEMO, relative to ~/doom/demo."))
-            .arg(Arg::new("record-from-to").long("record-from-to").number_of_values(2).help("Play back FROM, allowing you to rewrite its ending to TO").long_help("Play FROM. You are allowed to press the join key at any time to begin recording your inputs from the current frame. Whenever you quit the game, the final result will be written to TO.").value_names(&["FROM", "TO"]))
-            .arg(Arg::new("render").short('R').long("render").help("Render a demo as a video").long_help("The video will be placed in /extra/Videos/{iwad}/{pwads}/{demoname}.").value_name("DEMO"))
-            .arg(Arg::new("respawn").long("respawn").help("Enable respawning monsters"))
-            .arg(Arg::new("short-tics").long("short-tics").help("Play the game with short tics instead of long tics"))
-            .arg(Arg::new("skill").short('s').long("skill").help("Set the game's skill level by a number").value_name("SKILL"))
-            .arg(Arg::new("vanilla-weapons").long("vanilla-weapons").help("Load the game with smooth weapon animations"))
-            .arg(Arg::new("video-mode").short('v').long("video-mode").help("Set the video mode of the game (software, hardware)").long_help("Only supported on Boom-derived sourceports.").value_name("MODE"))
-            .arg(Arg::new("warp").short('w').long("warp").help("Start the game at a specific level number").value_name("LEVEL"))
-            .arg(Arg::new("passthrough").multiple_values(true))
-            ;
+    #[clap(
+        short = 'R',
+        long,
+        value_name = "DEMO",
+        conflicts_with_all = &["render-with-name", "record", "record-from-to"]
+    )]
+    /// Render a demo to a video.
+    ///
+    /// The video's location will be your current working directory (or $DOOM_VIDEO_DIR), with a name matching
+    /// the demo's name.
+    ///
+    /// To override this behavior, pass '--render-with-name' instead.
+    render: Option<PathBuf>,
 
-    let matches = app.get_matches();
+    #[clap(
+        long,
+        number_of_values = 2,
+        value_names = &["DEMO", "VIDEO"],
+        conflicts_with_all = &["render", "record", "record-from-to"]
+    )]
+    /// Render DEMO to VIDEO.
+    ///
+    /// This is a customizable version of '-R'.
+    render_with_name: Option<Vec<PathBuf>>,
 
-    if let Some(doom_dir) = matches.value_of("doom-dir") {
-        *CUSTOM_DOOM_DIR.lock().unwrap() = Some(PathBuf::from_str(doom_dir).unwrap());
-    }
+    #[clap(long)]
+    /// Enable respawning monsters.
+    respawn: bool,
 
-    if !doom_dir()?.exists() {
-        let answer = Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt(format!(
-                "You don't have a dedicated Doom directory at {}. Create it?",
-                doom_dir()?.to_string_lossy()
-            ))
-            .interact()
-            .map_err(Error::Io)?;
-        if answer {
-            create_dir_all(doom_dir()?).map_err(Error::Io)?;
-            info!("Success.");
-        } else {
-            warn!("Cannot continue. You can set the dedicated Doom directory by passing the flag --doom-dir. You only have to pass the flag once, as it will be remembered.");
-            return Ok(());
-        }
-    }
+    #[clap(long)]
+    /// Enable short tics.
+    ///
+    /// By default, this CLI will pass -longtics when recording demos for convenience.
+    short_tics: bool,
 
-    let known_engines = read_known_engines()?;
-    let engine_name = matches
-        .value_of("engine")
-        .map(|s| s.to_owned())
-        .or_else(|| known_engines.iter().next())
-        .ok_or(Error::NoEngines)?;
-    let engine = &known_engines.get(&engine_name).unwrap_or_else(|| {
-        error!("ERROR: Unknown sourceport '{}'", engine_name);
-        exit(-1);
-    });
-
-    let mut search_iwads: Box<dyn Iterator<Item = String>> = matches
-        .value_of("iwad")
-        .map::<Box<dyn Iterator<Item = String>>, _>(|i| Box::new(std::iter::once(i.to_string())))
-        .unwrap_or_else(|| {
-            Box::new(
-                ["DOOM2.WAD", "DOOM.WAD", "DOOMU.WAD", "DOOM1.WAD"]
-                    .iter()
-                    .map(|i: &&str| i.to_string()),
-            )
-        });
-    let iwad_path = loop {
-        let iwad = match search_iwads.next() {
-            Some(i) => i,
-            None => break None,
-        };
-        let iwad_path = search::search_file(&iwad, FileType::Iwad).or_else(|e| {
-            if let Error::FileNotFound(_) = e {
-                Ok(vec![])
-            } else {
-                Err(e)
-            }
-        })?;
-        if iwad_path.is_empty() {
-            warn!("IWAD not found: '{}'", iwad);
-        } else {
-            break Some(iwad_path);
-        }
-    };
-    if iwad_path.is_none() {
-        error!("No IWADs could be found.");
-        exit(-1);
-    }
-    let iwad_path = iwad_path.unwrap();
-    let iwad_path = absolute_path(&iwad_path[0])?;
-    let iwad = iwad_path.to_string_lossy().to_string();
-
-    let iwad_base = iwad_path
-        .file_name()
-        .ok_or_else(|| Error::NoFileStem(iwad_path.to_string_lossy().into_owned()))
-        .and_then(|f| {
-            f.to_str()
-                .ok_or_else(|| Error::NonUtf8Path(f.to_string_lossy().into_owned()))
-        })?;
-    let iwad_noext = iwad_path
-        .file_stem()
-        .ok_or_else(|| Error::NoFileStem(iwad_path.to_string_lossy().into_owned()))
-        .and_then(|i| {
-            i.to_str()
-                .ok_or_else(|| Error::NonUtf8Path(i.to_string_lossy().into_owned()))
-        })?
-        .to_lowercase();
-
-    let mut cmdline = CommandLine::new();
-    if matches.is_present("debug") {
-        cmdline.push_line(Line::from_word("/usr/bin/lldb", 0));
-    }
-    cmdline.push_line(Line::from_word(
-        engine
-            .binary
-            .to_str()
-            .ok_or_else(|| Error::NonUtf8Path(engine.binary.to_string_lossy().into_owned()))?,
-        0,
-    ));
-    if matches.is_present("debug") {
-        cmdline.push_line(Line::from_word("--", 0));
-    }
-    if !engine.required_args.is_empty() {
-        cmdline.push_line(Line::from_words(&engine.required_args, 1));
-    }
-    cmdline.push_line(Line::from_words(&["-iwad", &iwad], 1));
-
-    let mut pwads = Pwads::new();
-
-    if engine.supports_widescreen_assets {
-        if let Ok(assets) = search::search_file(
-            format!("{}_widescreen_assets.wad", iwad_noext),
-            FileType::Pwad,
-        ) {
-            pwads.add_wads(assets);
-        } else {
-            warn!(
-                "Couldn't find widescreen assets for {}.",
-                match iwad_noext.as_str() {
-                    "doom" => "Doom",
-                    "doom2" => "Doom 2",
-                    "tnt" => "TNT: Evilution",
-                    "plutonia" => "The Plutonia Experiment",
-                    _ => "<unknown IWAD>",
+    #[clap(
+        short,
+        long,
+        value_name = "NUM",
+        validator = |val| match val.parse::<u8>() {
+            Ok(i) => {
+                if (1..=5).contains(&i) {
+                    Ok(())
+                } else {
+                    Err(String::from("Skills range from 1 to 5."))
                 }
-            );
-        }
-    }
+            }
+            Err(e) => Err(e.to_string())
+        },
+        default_value_t = 4,
+    )]
+    /// Set the skill level.
+    skill: u8,
 
-    autoload::autoload(&mut pwads, &engine.binary, &iwad_noext)?;
+    #[clap(short, long)]
+    /// Set the video mode.
+    ///
+    /// This translates to the '-vidmode' parameter for PrBoom-derived ports,
+    /// and does nothing in other ports.
+    video_mode: Option<String>,
 
-    let mut viddump_folder_name = vec![];
+    #[clap(short, long, value_name = "NUM")]
+    /// Start the game on the specified level.
+    warp: Option<u8>,
 
-    if let Some(arg_pwads_raw) = matches.value_of("pwads") {
-        parse_arg_pwads(arg_pwads_raw, &mut viddump_folder_name, &mut pwads)?;
-    }
-
-    if let Some(extra_pwads_raw) = matches.value_of("extra-pwads") {
-        parse_extra_pwads(extra_pwads_raw, &mut pwads)?;
-    }
-
-    if matches.is_present("vanilla-weapons") {
-        pwads.add_wads(search::search_file("vsmooth.wad", FileType::Pwad)?);
-        pwads.add_dehs(search::search_file("vsmooth.deh", FileType::Pwad)?);
-    }
-
-    if matches.is_present("3p") {
-        let sound_pack = search::search_file("3P Sound Pack.wad", FileType::Pwad)?;
-        pwads.add_wad(&sound_pack[0]);
-    }
-
-    if !pwads.wads().is_empty() {
-        cmdline.push_line(Line::from_word("-file", 1));
-        pwads.wads().iter().try_for_each(|pwad| {
-            pwad.to_str()
-                .ok_or_else(|| Error::NonUtf8Path(pwad.to_string_lossy().into_owned()))
-                .map(|pwad| cmdline.push_line(Line::from_word(pwad, 2)))
-        })?;
-    }
-
-    if !pwads.dehs().is_empty() {
-        cmdline.push_line(Line::from_word("-deh", 1));
-        pwads.dehs().iter().try_for_each(|deh| {
-            deh.to_str()
-                .ok_or_else(|| Error::NonUtf8Path(deh.to_string_lossy().into_owned()))
-                .map(|deh| cmdline.push_line(Line::from_word(deh, 2)))
-        })?;
-    }
-
-    let complevel = matches.value_of("compatibility-level").unwrap_or("21");
-    cmdline.push_line(Line::from_words(
-        &[String::from("-complevel"), complevel.to_string()],
-        1,
-    ));
-
-    if matches.is_present("pistol-start") {
-        cmdline.push_line(Line::from_word("-pistolstart", 1));
-    }
-
-    if let Some(vidmode) = matches.value_of("video-mode") {
-        cmdline.push_line(Line::from_words(&["-vidmode", vidmode], 1));
-    }
-
-    if let Some(geom) = matches.value_of("geometry") {
-        cmdline.push_line(Line::from_words(&["-geom", geom], 1));
-    }
-
-    let skill_param = if engine.kind == DoomEngineKind::ZDoom {
-        &["+skill", "3"]
-    } else {
-        &["-skill", "4"]
-    };
-
-    if let Some(recording_demo) = matches.value_of("record") {
-        let demo_path = PathBuf::from(recording_demo);
-        let demo_path = if demo_path.is_absolute() {
-            demo_path
-        } else {
-            demo_dir()?.join(demo_path)
-        };
-        cmdline.push_line(Line::from_word("-record", 1));
-        cmdline.push_line(Line::from_word(demo_path.to_string_lossy(), 2));
-        if !matches.is_present("short-tics") {
-            cmdline.push_line(Line::from_word("-longtics", 1));
-        }
-    } else if matches.is_present("short-tics") {
-        cmdline.push_line(Line::from_word("-shorttics", 1));
-    }
-
-    if let Some(from_to) = matches.values_of("record-from-to") {
-        let from_to = from_to.collect::<Vec<_>>();
-        cmdline.push_line(Line::from_word("-recordfromto", 1));
-        cmdline.push_line(Line::from_words(&from_to[0..2], 2));
-    }
-
-    if let Some(playing_demo) = matches.value_of("play-demo") {
-        let demo = select_between(
-            playing_demo,
-            search::search_file(playing_demo, FileType::Demo)?,
-        )?;
-        if demo.is_empty() {
-            error!("No such demo: {}", playing_demo);
-            exit(-1);
-        }
-        cmdline.push_line(Line::from_word("-playdemo", 1));
-        cmdline.push_line(Line::from_word(
-            demo[0]
-                .to_str()
-                .ok_or_else(|| Error::NonUtf8Path(demo[0].to_string_lossy().into_owned()))?,
-            2,
-        ));
-    }
-
-    if let Some(warp) = matches.value_of("warp") {
-        cmdline.push_line(Line::from_words(
-            &{
-                let mut words = vec!["-warp"];
-                words.extend(warp.split(ARG_SEPARATOR));
-                words
-            },
-            1,
-        ));
-    }
-
-    if let Some(skill) = matches.value_of("skill") {
-        cmdline.push_line(Line::from_words(&[skill_param[0], skill], 1));
-    } else if matches.is_present("warp") {
-        cmdline.push_line(Line::from_words(skill_param, 1));
-    }
-
-    if matches.is_present("no-monsters") {
-        cmdline.push_line(Line::from_word("-nomonsters", 1));
-    }
-
-    if matches.is_present("fast") {
-        cmdline.push_line(Line::from_word("-fast", 1));
-    }
-
-    if matches.is_present("respawn") {
-        cmdline.push_line(Line::from_word("-respawn", 1));
-    }
-
-    if let Some(passthrough) = matches.values_of("passthrough") {
-        for arg in passthrough {
-            cmdline.push_line(Line::from_word(arg, 1));
-        }
-    }
-
-    println!();
-    if let Some(render_matches) = matches.value_of("render") {
-        let dump_dir = dump_dir()
-            .join("Videos")
-            .join(iwad_base)
-            .join(viddump_folder_name.join(","));
-        let renderings = render::collect_renderings(render_matches, &dump_dir)?;
-        batch_render(renderings, &cmdline, dump_dir)?;
-    } else {
-        println!(
-            "Command line: \n'\n{}\n'",
-            cmdline.iter_lines().map(|l| l.iter().join(" ")).join("\n")
-        );
-        if !matches.is_present("no-confirm") {
-            Input::<String>::with_theme(&ColorfulTheme {
-                prompt_prefix: style("*".into()).yellow(),
-                ..Default::default()
-            })
-            .with_prompt("Press enter to launch Doom.")
-            .allow_empty(true)
-            .interact()
-            .map_err(Error::Io)?;
-        }
-        run_doom(cmdline.iter_words())?;
-    }
-    Ok(())
+    #[clap(multiple_values = true)]
+    /// Pass arguments directly to the Doom engine.
+    passthrough: Vec<String>,
 }
 
 fn main() {
-    pretty_env_logger::init();
-    if let Err(e) = run() {
-        error!("{}", e);
-        exit(-1);
-    }
+    dbg!(Args::parse());
 }
