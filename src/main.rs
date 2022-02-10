@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use clap::StructOpt;
 use dialoguer::theme::ColorfulTheme;
 
+mod engine_manager;
 mod error;
 
 use error::Error;
@@ -188,12 +189,29 @@ fn run() -> Result<(), Error> {
             ))
             .interact()
             .map_err(Error::Io)?;
-        if answer {
-            std::fs::create_dir_all(&args.doom_dir).map_err(Error::Io)?;
-        } else {
-            eprintln!("ERROR: Cannot continue. See --help for details on configuring the Doom directory.");
+        if !answer {
+            eprintln!(
+                "ERROR: Cannot continue. See --help for details on configuring the Doom directory."
+            );
             return Err(Error::NoDoomDir);
         }
+        std::fs::create_dir_all(&args.doom_dir).map_err(Error::Io)?;
+    }
+
+    let engines_file_path = args.doom_dir.join("engines.hjson");
+    if !engines_file_path.exists() {
+        let create_engines_file = dialoguer::Confirm::with_theme(&ColorfulTheme::default())
+            .with_prompt(format!(
+                "{} does not exist yet. Create it?",
+                engines_file_path.to_string_lossy()
+            ))
+            .interact()
+            .map_err(Error::Io)?;
+        if !create_engines_file {
+            eprintln!("ERROR: Cannot continue without any specified engines.");
+            return Err(Error::NoEngines);
+        }
+        engine_manager::create_template(&engines_file_path)?;
     }
 
     Ok(())
