@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -83,6 +84,21 @@ impl Engines {
     }
 }
 
-pub(crate) fn create_template(engines_file_path: &PathBuf) -> Result<(), Error> {
-    todo!()
+pub(crate) fn create_template(engines_file_path: impl AsRef<Path>) -> Result<(), Error> {
+    std::fs::write(
+        engines_file_path,
+        r#"
+{
+  "engines": {
+    // example: {
+    //   aliases: ["ex"],
+    //   path: "/dev/zero",
+    //   kind: Mbf,
+    // }
+  }
+}
+"#
+        .trim(),
+    )
+    .map_err(Error::Io)
 }

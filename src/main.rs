@@ -6,6 +6,7 @@ use dialoguer::theme::ColorfulTheme;
 mod engine_manager;
 mod error;
 
+use engine_manager::Engines;
 use error::Error;
 
 #[derive(clap::Parser, Debug)]
@@ -190,9 +191,7 @@ fn run() -> Result<(), Error> {
             .interact()
             .map_err(Error::Io)?;
         if !answer {
-            eprintln!(
-                "ERROR: Cannot continue. See --help for details on configuring the Doom directory."
-            );
+            eprintln!("See --help for details on configuring the Doom directory.");
             return Err(Error::NoDoomDir);
         }
         std::fs::create_dir_all(&args.doom_dir).map_err(Error::Io)?;
@@ -208,11 +207,22 @@ fn run() -> Result<(), Error> {
             .interact()
             .map_err(Error::Io)?;
         if !create_engines_file {
-            eprintln!("ERROR: Cannot continue without any specified engines.");
-            return Err(Error::NoEngines);
+            return Err(Error::NoEngines(engines_file_path));
         }
         engine_manager::create_template(&engines_file_path)?;
     }
+
+    let known_engines = Engines::read_from_file(&engines_file_path)?;
+    let maybe_selected_engine = match args.engine.as_ref() {
+        Some(e) => known_engines.get(e),
+        None => known_engines.first(),
+    };
+    let selected_engine = match maybe_selected_engine {
+        Some(e) => e,
+        None => {
+            return Err(Error::NoEngines(engines_file_path));
+        }
+    };
 
     Ok(())
 }
