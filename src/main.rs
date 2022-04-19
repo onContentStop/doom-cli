@@ -5,6 +5,7 @@ use dialoguer::theme::ColorfulTheme;
 
 mod engine_manager;
 mod error;
+mod search;
 
 use engine_manager::Engines;
 use error::Error;
@@ -223,6 +224,8 @@ fn run() -> Result<(), Error> {
             return Err(Error::NoEngines(engines_file_path));
         }
     };
+
+    let iwad_path = search::search_file(&args.iwad)?;
 
     Ok(())
 }

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -89,7 +88,7 @@ pub(crate) fn create_template(engines_file_path: impl AsRef<Path>) -> Result<(),
         engines_file_path,
         r#"
 {
-  "engines": {
+  engines: {
     // example: {
     //   aliases: ["ex"],
     //   path: "/dev/zero",
