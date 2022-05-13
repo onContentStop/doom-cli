@@ -10,4 +10,6 @@ pub(crate) enum Error {
     NoEngines(PathBuf),
     #[error(transparent)]
     Hjson(deser_hjson::Error),
+    #[error("No file stem in '{0}'")]
+    NoFileStem(PathBuf),
 }
