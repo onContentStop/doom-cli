@@ -85,14 +85,14 @@ fn demo_dir() -> Result<PathBuf, Error> {
 fn dump_dir() -> PathBuf {
     let raw_output = String::from_utf8(
         Command::new("findmnt")
-            .arg("/dev/sdd1")
+            .arg("/dev/sdb1")
             .output()
             .unwrap()
             .stdout,
     )
     .unwrap();
     let second_line = raw_output.lines().nth(1).unwrap_or_else(|| {
-        error!("Please mount /dev/sdd1. I beg you.");
+        error!("Please mount /dev/sdb1. I beg you.");
         exit(-1);
     });
     second_line.split_whitespace().next().unwrap().into()
