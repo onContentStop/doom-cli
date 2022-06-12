@@ -404,7 +404,7 @@ checksum = "dc0e1f259c92177c30a4c9d177246edd0a3568b25756a977d0632cf8fa37e905"
 
 [[package]]
 name = "playdoom"
-version = "0.6.0"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "clap",

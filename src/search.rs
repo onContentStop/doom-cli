@@ -79,7 +79,10 @@ pub(crate) fn search_file_in_dirs_by(
             }
             let mut results = vec![];
 
-            for entry in WalkDir::new(search_dir).contents_first(true) {
+            for entry in WalkDir::new(search_dir)
+                .contents_first(true)
+                .follow_links(true)
+            {
                 let entry = match entry {
                     Ok(e) => e,
                     Err(e) => {
