@@ -86,6 +86,11 @@ pub(crate) fn search_file_in_dirs_by(
                 let entry = match entry {
                     Ok(e) => e,
                     Err(e) => {
+                        if let Some(io) = e.io_error() {
+                            if io.kind() == std::io::ErrorKind::PermissionDenied || io.kind() == std::io::ErrorKind::NotFound {
+                                continue;
+                            }
+                        }
                         info!("Stopping search due to an error: {}", e);
                         break;
                     }
