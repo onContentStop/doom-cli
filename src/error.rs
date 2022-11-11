@@ -7,7 +7,10 @@ use std::sync::mpsc::SendError;
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Error {
     #[error("'{file}' contains bad RON: {error}")]
-    BadRon { file: PathBuf, error: ron::error::SpannedError },
+    BadRon {
+        file: PathBuf,
+        error: ron::error::SpannedError,
+    },
     #[error("creating autoloads file in your Doom directory: {0}")]
     CreatingAutoloadsFile(io::Error),
     #[error("file not found: '{0}'")]
