@@ -23,8 +23,6 @@ pub(crate) enum Error {
     Io(io::Error),
     #[error("no engines defined")]
     NoEngines,
-    #[error("no file extension in '{0}'")]
-    NoFileExtension(String),
     #[error("no file stem in '{0}'")]
     NoFileStem(String),
     #[error("attempting to open a file: {0}")]

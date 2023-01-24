@@ -46,6 +46,10 @@ pub(crate) fn score_entry(
             score += 5;
         }
     }
+    if entry.path().is_dir() {
+        // break ties with dirs and wads
+        score /= 2;
+    }
     if stems_eq && ancestors_eq {
         // iwad/doom2
         score += 20;

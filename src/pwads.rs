@@ -59,7 +59,7 @@ pub(crate) fn parse_arg_pwads(
                     ["wad", "pk3", "pk7", "pke", "zip", "deh", "bex"]
                         .contains(&ext.to_lowercase().as_str())
                 })
-                .unwrap_or(false)
+                .unwrap_or(true)
         })?;
         viddump_folder_name.extend(
             search_file(pwad, FileType::Pwad)?
@@ -97,15 +97,16 @@ pub(crate) fn parse_arg_pwads(
     for pwad in arg_pwads {
         match pwad
             .extension()
-            .ok_or_else(|| Error::NoFileExtension(pwad.to_string_lossy().into_owned()))
-            .and_then(|ext| {
+            .map(|ext| {
                 ext.to_str()
                     .ok_or_else(|| Error::NonUtf8Path(ext.to_string_lossy().into_owned()))
-            })?
+            })
+            .transpose()?
+            .unwrap_or("")
             .to_lowercase()
             .as_str()
         {
-            "wad" | "pk3" | "zip" | "pk7" | "pke" => pwads.add_wad(pwad),
+            "wad" | "pk3" | "zip" | "pk7" | "pke" | "" => pwads.add_wad(pwad),
             "deh" | "bex" => pwads.add_deh(pwad),
             _ => unreachable!(),
         }

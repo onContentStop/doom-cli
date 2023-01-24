@@ -5,6 +5,7 @@ use crate::FileType;
 use itertools::Itertools;
 use log::info;
 use log::trace;
+use std::borrow::Cow;
 use std::path::Path;
 use std::path::PathBuf;
 use walkdir::WalkDir;
@@ -15,10 +16,10 @@ pub(crate) fn search_files(list: &[String], ty: FileType) -> Result<Vec<PathBuf>
             search_file_in_dirs_by(PathBuf::from(i), ty.get_search_dirs()?, |p| {
                 ["wad", "deh", "bex", "pk3", "pk7", "pke", "zip"].contains(
                     &p.extension()
-                        .map(|ext| ext.to_string_lossy().to_string())
-                        .unwrap_or_default()
-                        .as_str(),
-                )
+                        .map(|ext| ext.to_string_lossy())
+                        .unwrap_or(Cow::Borrowed(""))
+                        .as_ref(),
+                ) || p.is_dir()
             })
         })
         .map(|rr| rr.map(|r| r.into_iter().next().unwrap()))
@@ -69,7 +70,7 @@ pub(crate) fn search_file_in_dirs_by(
                 .ancestors()
                 .skip(1)
                 .map(|p| p.to_path_buf())
-                .collect::<Vec<_>>();
+                .collect_vec();
 
             let search_dir = absolute_path(PathBuf::from(&search_dir))?;
 
@@ -77,12 +78,9 @@ pub(crate) fn search_file_in_dirs_by(
                 path: PathBuf,
                 score: usize,
             }
-            let mut results = vec![];
+            let mut results = Vec::<SearchResult>::new();
 
-            for entry in WalkDir::new(search_dir)
-                .contents_first(true)
-                .follow_links(true)
-            {
+            for entry in WalkDir::new(search_dir).follow_links(true) {
                 let entry = match entry {
                     Ok(e) => e,
                     Err(e) => {
@@ -97,10 +95,6 @@ pub(crate) fn search_file_in_dirs_by(
                         break;
                     }
                 };
-
-                if entry.path().is_dir() {
-                    continue;
-                }
 
                 if !predicate(entry.path()) {
                     continue;
@@ -119,7 +113,10 @@ pub(crate) fn search_file_in_dirs_by(
 
                 let entry_score =
                     score_entry(&entry, base_name, extension, entry_extension, &ancestors)?;
-                if entry_score > 1 {
+                if (results.is_empty() && entry_score > 1)
+                    || (!results.is_empty() && entry_score > results[0].score)
+                {
+                    results.clear();
                     results.push(SearchResult {
                         path: entry.path().into(),
                         score: entry_score,
@@ -128,18 +125,13 @@ pub(crate) fn search_file_in_dirs_by(
             }
 
             if !results.is_empty() {
-                let results = results
-                    .into_iter()
-                    .sorted_by_key(|r| r.score)
-                    .map(|r| r.path)
-                    .rev()
-                    .collect::<Vec<_>>();
+                let results = results.into_iter().map(|r| r.path).collect_vec();
                 trace!(
                     "Results: [{}]",
                     results
                         .iter()
                         .map(|r| r.to_string_lossy())
-                        .collect::<Vec<_>>()
+                        .collect_vec()
                         .join(", ")
                 );
                 return Ok(results);
