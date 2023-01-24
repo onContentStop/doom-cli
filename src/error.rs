@@ -12,4 +12,6 @@ pub(crate) enum Error {
     Hjson(deser_hjson::Error),
     #[error("No file stem in '{0}'")]
     NoFileStem(PathBuf),
+    #[error("file not found: {0}")]
+    FileNotFound(String),
 }

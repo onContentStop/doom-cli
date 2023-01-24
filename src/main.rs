@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::StructOpt;
+use clap::Parser;
 use dialoguer::theme::ColorfulTheme;
 
 mod engine_manager;
@@ -11,7 +11,7 @@ mod util;
 use engine_manager::Engines;
 use error::Error;
 
-#[derive(clap::Parser, Debug)]
+#[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 /// Provides shortcuts to the many long-winded options that Doom engines accept.
 struct Args {
@@ -36,7 +36,7 @@ struct Args {
     /// Play the game with ENGINE instead of the first one in the configuration.
     engine: Option<String>,
 
-    #[clap(short = 'x', long, value_name = "WAD", multiple_values = true)]
+    #[clap(short = 'x', long, value_name = "WAD", num_args = 1..)]
     /// Add "extra" PWADs to the game.
     ///
     /// The difference between this and the '--pwads' parameter is that extra pwads are not
@@ -77,7 +77,7 @@ struct Args {
     /// See '-r'.
     play_demo: Option<PathBuf>,
 
-    #[clap(short, long, multiple_values = true, value_name = "WAD")]
+    #[clap(short, long, num_args = 1.., value_name = "WAD")]
     /// Add PWADs to the game.
     pwads: Vec<PathBuf>,
 
@@ -143,10 +143,10 @@ struct Args {
         short,
         long,
         value_name = "NUM",
-        validator = |val| match val.parse::<u8>() {
+        value_parser = |val: &str| match val.parse::<u8>() {
             Ok(i) => {
                 if (1..=5).contains(&i) {
-                    Ok(())
+                    Ok(i)
                 } else {
                     Err(String::from("Skills range from 1 to 5."))
                 }
@@ -169,7 +169,7 @@ struct Args {
     /// Start the game on the specified level.
     warp: Option<u8>,
 
-    #[clap(multiple_values = true)]
+    #[clap(num_args = 1..)]
     /// Pass arguments directly to the Doom engine.
     passthrough: Vec<String>,
 }
