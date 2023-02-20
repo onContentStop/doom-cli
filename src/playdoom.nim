@@ -1,8 +1,6 @@
-import doomCli/[
-  args,
-  config,
-]
+import doomCli/args
+import doomCli/config as configMod
 
 when isMainModule:
-  discard readConfig()
-  discard parseArgs()
+  let config = readConfig()
+  echo parseArgs(config)

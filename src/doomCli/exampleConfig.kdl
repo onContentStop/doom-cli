@@ -3,7 +3,7 @@ default-engine "gzdoom"
 
 // optional, default is platform-dependent:
 //  - windows: $APPDATA\playdoom
-//  - linux: $XDG_CONFIG_HOME/playdoom or $HOME/.config/playdoom
+//  - linux: $XDG_DATA_HOME/playdoom or $HOME/.local/share/playdoom
 // this dir will be used to find IWADs, PWADs, and store demos/rendered videos
 dir r"C:\Games\DOOM"
 

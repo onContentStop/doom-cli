@@ -2,6 +2,9 @@ import std/options
 
 import argparse
 
+import ./config as configMod
+import ./optionsExt
+
 
 type Args* = object
   compatibility*: Option[string]
@@ -13,7 +16,7 @@ type Args* = object
   render*: Option[string]
   warp*: Option[string]
 
-proc parseArgs*: Args =
+proc parseArgs*(config: Config): Args =
   var p = newParser:
     help("Run Doom via command-line arguments")
     option("-c", "--compatibility", help = "Set the compatibility level")
@@ -26,7 +29,15 @@ proc parseArgs*: Args =
     option("-w", "--warp", help = "Warp to a level (supply 1-1 for E1M1 if using doom 1)")
 
   try:
-    discard p.parse()
+    let opts = p.parse()
+    result.compatibility = opts.compatibility_opt
+    result.engine = opts.engineOpt.getOrElse(config.defaultEngine)
+    result.iwad = opts.iwad
+    result.confirm = not opts.noConfirm
+    result.pwads = opts.pwads
+    result.record = opts.recordOpt
+    result.render = opts.renderOpt
+    result.warp = opts.warpOpt
   except ShortCircuit as e:
     if e.flag == "argparse_help":
       echo p.help

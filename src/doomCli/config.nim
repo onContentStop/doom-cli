@@ -2,10 +2,12 @@ import std/options
 import std/os
 import std/sequtils
 import std/strformat
+import std/tables
 
 import appdirs
 import kdl
 
+import ./optionsExt
 import ./version
 
 {.experimental: "caseStmtMacros".}
@@ -13,7 +15,7 @@ import ./version
 type Engine* = object
   name*: string
   path*: string
-  args*: string
+  args*: seq[string]
 
 type Config* = object
   defaultEngine*: string
@@ -28,15 +30,15 @@ proc getKey(node: KdlNode, key: string): Option[KdlNode] =
 
   return none[KdlNode]()
 
+proc getStringKey(node: KdlNode): Option[string] =
+  if node.args.len == 1 and node.args[0].isString:
+    node.args[0].getString.some
+  else:
+    none[string]()
+
 proc showErr(key: string, node: string) =
   stderr.writeLine(fmt"Error parsing config: Expected a node named ""{key}"" in ""{node}"".")
   quit 1
-
-template getOrElse[T](opt: Option[T], otherwise: untyped): untyped =
-  if opt.isSome:
-    opt.get
-  else:
-    otherwise
 
 proc readConfig*: Config =
   let app = application("playdoom", author = some(PKG_AUTHOR), roaming = true)
@@ -51,9 +53,47 @@ proc readConfig*: Config =
       stderr.writeLine(fmt"See {examplePath} for an example.")
       quit 1
     let doom = doc[0]
-    let defaultEngine = doom.getKey("default-engine").getOrElse:
-      showErr("default-engine", "doom")
+    result.defaultEngine =
+      doom.getKey("default-engine").map(getStringKey).flatten.getOrElse:
+        showErr("default-engine", "doom")
+        quit 1
+    result.dir =
+      doom.getKey("dir")
+        .map(getStringKey)
+        # dir key missing
+        .getOrElse(app.userData.some)
+        # dir key present but non-string
+        .getOrElse:
+          stderr.writeLine("Error parsing config: Expected a plain string for \"doom.dir\"")
+          quit 1
+    let enginesNode = doom.getKey("engines").getOrElse:
+      showErr("engines", "doom")
       quit 1
+    for engineNode in enginesNode.children:
+      var engine = Engine(name: engineNode.name)
+      engine.path =
+        try: engineNode.props["path"].getString
+        except KeyError:
+          stderr.writeLine(
+            "Error parsing config: Expected a \"path\" property on the \"" &
+            engineNode.name & "\" engine."
+          )
+          quit 1
+      case engineNode.children.len
+      of 0:
+        discard
+      of 1:
+        let engineArgs = engineNode.children[0].getKey("args").getOrElse:
+          showErr("args", fmt"doom.engines.{engineNode.name}")
+          quit 1
+        for arg in engineArgs.args:
+          engine.args.add(arg.getString)
+      else:
+        stderr.writeLine(
+          fmt"Error parsing config: doom.engines.{engineNode.name} has too many children"
+        )
+        quit 1
+      result.engines.add(engine)
   except IOError:
     writeFile(configPath, "doom {\n}\n")
     writeFile(examplePath, exampleCfg)
