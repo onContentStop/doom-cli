@@ -2,7 +2,6 @@ import std/options
 import std/os
 import std/sequtils
 import std/strformat
-import fusion/matching
 
 import appdirs
 import kdl
@@ -33,6 +32,12 @@ proc showErr(key: string, node: string) =
   stderr.writeLine(fmt"Error parsing config: Expected a node named ""{key}"" in ""{node}"".")
   quit 1
 
+template getOrElse[T](opt: Option[T], otherwise: untyped): untyped =
+  if opt.isSome:
+    opt.get
+  else:
+    otherwise
+
 proc readConfig*: Config =
   let app = application("playdoom", author = some(PKG_AUTHOR), roaming = true)
   let configDir = app.userConfig
@@ -46,12 +51,9 @@ proc readConfig*: Config =
       stderr.writeLine(fmt"See {examplePath} for an example.")
       quit 1
     let doom = doc[0]
-    let defaultEngine =
-      case doom.getKey("default-engine")
-      of Some(@eng): eng
-      of None():
-        showErr("default-engine", "doom")
-        quit 1
+    let defaultEngine = doom.getKey("default-engine").getOrElse:
+      showErr("default-engine", "doom")
+      quit 1
   except IOError:
     writeFile(configPath, "doom {\n}\n")
     writeFile(examplePath, exampleCfg)
