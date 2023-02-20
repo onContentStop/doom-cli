@@ -1,9 +1,11 @@
 import std/options
 import std/os
-import std/parsecfg
+import std/sequtils
 import std/strformat
+import std/sugar
 
 import appdirs
+import kdl
 
 import ./version
 
@@ -17,23 +19,29 @@ type Config* = object
   dir*: string
   engines*: seq[Engine]
 
-const exampleCfg = staticRead("exampleConfig.ini")
+const exampleCfg = staticRead("exampleConfig.kdl")
 
 proc readConfig*: Config =
   let app = application("playdoom", author = some(PKG_AUTHOR), roaming = true)
   let configDir = app.userConfig
   createDir configDir
-  let configPath = configDir / "config.ini"
-  let examplePath = configDir / "example.ini"
+  let configPath = configDir / "config.kdl"
+  let examplePath = configDir / "example.kdl"
   try:
-    let config = loadConfig(configPath)
-    let defaultEngine = config.getSectionValue("doom", "default-engine")
-    if defaultEngine == "":
+    let doc = parseKdlFile(configPath)
+    if doc[0].name != "doom":
+      stderr.writeLine(fmt"Error parsing ""{configPath}"": Expected a top-level node named ""doom"".")
+      stderr.writeLine(fmt"See {examplePath} for an example.")
+      quit 1
+    if not doc[0].children.any(node => node.name == "default-engine"):
       writeFile(examplePath, exampleCfg)
       stderr.writeLine(fmt"Please specify a default engine in {configPath}. See {examplePath} for an example.")
       quit 1
   except IOError:
-    writeFile(configPath, "[doom]\n")
+    writeFile(configPath, "doom {\n}\n")
     writeFile(examplePath, exampleCfg)
-    stderr.writeLine(fmt"Please write your config in {configPath}. An example is provided in {examplePath}.")
+    stderr.writeLine(fmt"Please write your config in ""{configPath}"". An example is provided in ""{examplePath}"".")
+    quit 1
+  except KdlParserError:
+    stderr.writeLine(fmt"Error parsing ""{configPath}"": {getCurrentExceptionMsg()}.")
     quit 1

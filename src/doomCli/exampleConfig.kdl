@@ -1,0 +1,18 @@
+// error if not provided, what would doom run on otherwise?
+default-engine "gzdoom"
+
+// optional, default is platform-dependent:
+//  - windows: $APPDATA\playdoom
+//  - linux: $XDG_CONFIG_HOME/playdoom or $HOME/.config/playdoom
+// this dir will be used to find IWADs, PWADs, and store demos/rendered videos
+dir r"C:\Games\DOOM"
+
+// required, key-value pairs of engine name and path to executable
+engines {
+  gzdoom path="gzdoom.exe" {
+    // optional, each engine can have this to allow arbitrary command line arguments
+    args "-iwad" "doom2.wad"
+  }
+
+  prboom path="prboom-plus.exe"
+}

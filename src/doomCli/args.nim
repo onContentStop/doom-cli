@@ -7,7 +7,7 @@ type Args* = object
   compatibility*: Option[string]
   engine*: string
   iwad*: string
-  confirm*: bool = true
+  confirm*: bool
   pwads*: seq[string]
   record*: Option[string]
   render*: Option[string]
