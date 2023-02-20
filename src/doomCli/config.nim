@@ -2,12 +2,14 @@ import std/options
 import std/os
 import std/sequtils
 import std/strformat
-import std/sugar
+import fusion/matching
 
 import appdirs
 import kdl
 
 import ./version
+
+{.experimental: "caseStmtMacros".}
 
 type Engine* = object
   name*: string
@@ -21,6 +23,16 @@ type Config* = object
 
 const exampleCfg = staticRead("exampleConfig.kdl")
 
+proc getKey(node: KdlNode, key: string): Option[KdlNode] =
+  for val in node.children.filterIt(it.name == key):
+    return some(val)
+
+  return none[KdlNode]()
+
+proc showErr(key: string, node: string) =
+  stderr.writeLine(fmt"Error parsing config: Expected a node named ""{key}"" in ""{node}"".")
+  quit 1
+
 proc readConfig*: Config =
   let app = application("playdoom", author = some(PKG_AUTHOR), roaming = true)
   let configDir = app.userConfig
@@ -33,10 +45,13 @@ proc readConfig*: Config =
       stderr.writeLine(fmt"Error parsing ""{configPath}"": Expected a top-level node named ""doom"".")
       stderr.writeLine(fmt"See {examplePath} for an example.")
       quit 1
-    if not doc[0].children.any(node => node.name == "default-engine"):
-      writeFile(examplePath, exampleCfg)
-      stderr.writeLine(fmt"Please specify a default engine in {configPath}. See {examplePath} for an example.")
-      quit 1
+    let doom = doc[0]
+    let defaultEngine =
+      case doom.getKey("default-engine")
+      of Some(@eng): eng
+      of None():
+        showErr("default-engine", "doom")
+        quit 1
   except IOError:
     writeFile(configPath, "doom {\n}\n")
     writeFile(examplePath, exampleCfg)
