@@ -20,7 +20,7 @@ type Config* = object
 const exampleCfg = staticRead("exampleConfig.ini")
 
 proc readConfig*: Config =
-  let app = application("playdoom", author = some(PKG_AUTHOR), version = some(PKG_VERSION), roaming = true)
+  let app = application("playdoom", author = some(PKG_AUTHOR), roaming = true)
   let configDir = app.userConfig
   createDir configDir
   let configPath = configDir / "config.ini"
