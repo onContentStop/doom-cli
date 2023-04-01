@@ -153,7 +153,7 @@ fn dirname(binary: &Path) -> PathBuf {
 
 fn run() -> Result<(), Error> {
     let app = App::new("Command-line Doom launcher")
-            .version("0.1.0")
+            .version(clap::crate_version!())
             .before_help("This Doom launcher allows shortcuts to the many long-winded options that Doom engines accept.")
             .setting(AppSettings::TrailingVarArg)
             .color(ColorChoice::Auto)
