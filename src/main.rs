@@ -313,11 +313,13 @@ fn run() -> Result<(), Error> {
         })?;
     }
 
-    let complevel = matches.value_of("compatibility-level").unwrap_or("21");
-    cmdline.push_line(Line::from_words(
-        &[String::from("-complevel"), complevel.to_string()],
-        1,
-    ));
+    if [DoomEngineKind::Boom, DoomEngineKind::MBF].contains(&engine.kind) {
+        let complevel = matches.value_of("compatibility-level").unwrap_or("21");
+        cmdline.push_line(Line::from_words(
+            &[String::from("-complevel"), complevel.to_string()],
+            1,
+        ));
+    }
 
     if matches.is_present("pistol-start") {
         cmdline.push_line(Line::from_word("-pistolstart", 1));
