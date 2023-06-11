@@ -1,10 +1,9 @@
 [package]
 name = "playdoom"
-version = "0.6.4"
-authors = ["kyle.coffey <kyle.coffey@tamu.edu>"]
+version = "0.7.0"
+authors = ["Kyle Coffey <me@phytolizer.dev>"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 clap = { version = "3.2.23", features = ["cargo"] }
 itertools = "0.10.5"

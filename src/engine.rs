@@ -13,22 +13,24 @@ const EXAMPLE_ENGINES_FILE: &str = indoc!(
     r#"
     {
         // This header should be the canonical name of your engine.
-        "example": DoomEngine(
+        // "example": DoomEngine(
             // Put here any aliases you want to use with the -e option.
-            aliases: [
-                "example",
-                "ex",
-            ],
+            // aliases: [
+            //     "example",
+            //     "ex",
+            // ],
             // Path to the binary.
-            binary: "/dev/zero",
+            // binary: "/dev/zero",
             // What compatibility levels does this engine support?
             // Valid values: ("Vanilla", "Boom", "MBF", "Eternity", "ZDoom")
-            kind: Vanilla,
-            // Does this engine support the official Doom widescreen assets?
-            // Most engines don't, so if you don't know, put false here.
-            supports_widescreen_assets: false,
+            // kind: Vanilla,
             // Are there any other arguments you want to always pass to the engine?
-            required_args: [],
+            // Optional.
+            // required_args: [],
+            // Does this sourceport use `-merge` for PWADs and DEHACKED?
+            // Optional, defaults to false.
+            // If true, the launcher will use `-merge`, never `-file` nor `-deh`.
+            // use_merge_arg: false,
         ),
     }
     "#
@@ -52,8 +54,10 @@ pub(crate) struct DoomEngine {
     aliases: Vec<String>,
     pub binary: PathBuf,
     pub kind: DoomEngineKind,
-    pub supports_widescreen_assets: bool,
+    #[serde(default)]
     pub required_args: Vec<String>,
+    #[serde(default)]
+    pub use_merge_arg: bool,
 }
 
 pub(crate) struct KnownEngines {

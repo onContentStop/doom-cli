@@ -139,7 +139,6 @@ fn run() -> Result<(), Error> {
             .before_help("This Doom launcher allows shortcuts to the many long-winded options that Doom engines accept.")
             .setting(AppSettings::TrailingVarArg)
             .color(ColorChoice::Auto)
-            .arg(Arg::new("3p").long("3p").help("Add the 3P Sound Pack"))
             .arg(Arg::new("compatibility-level").short('c').long("compatibility-level").help("Set the compatibility level to LEVEL").value_name("LEVEL"))
             .arg(Arg::new("debug").short('G').long("debug").help("Run Doom under a debugger"))
             .arg(Arg::new("doom-dir").long("doom-dir").help("Set a custom Doom configuration directory"))
@@ -159,7 +158,6 @@ fn run() -> Result<(), Error> {
             .arg(Arg::new("respawn").long("respawn").help("Enable respawning monsters"))
             .arg(Arg::new("short-tics").long("short-tics").help("Play the game with short tics instead of long tics"))
             .arg(Arg::new("skill").short('s').long("skill").help("Set the game's skill level by a number").value_name("SKILL"))
-            .arg(Arg::new("vanilla-weapons").long("vanilla-weapons").help("Load the game with smooth weapon animations"))
             .arg(Arg::new("video-mode").short('v').long("video-mode").help("Set the video mode of the game (software, hardware)").long_help("Only supported on Boom-derived sourceports.").value_name("MODE"))
             .arg(Arg::new("warp").short('w').long("warp").help("Start the game at a specific level number").value_name("LEVEL"))
             .arg(Arg::new("passthrough").multiple_values(true))
@@ -272,26 +270,6 @@ fn run() -> Result<(), Error> {
 
     let mut pwads = Pwads::new();
 
-    if engine.supports_widescreen_assets {
-        if let Ok(assets) = search::search_file(
-            format!("{}_widescreen_assets.wad", iwad_noext),
-            FileType::Pwad,
-        ) {
-            pwads.add_wads(assets);
-        } else {
-            warn!(
-                "Couldn't find widescreen assets for {}.",
-                match iwad_noext.as_str() {
-                    "doom" => "Doom",
-                    "doom2" => "Doom 2",
-                    "tnt" => "TNT: Evilution",
-                    "plutonia" => "The Plutonia Experiment",
-                    _ => "<unknown IWAD>",
-                }
-            );
-        }
-    }
-
     autoload::autoload(&mut pwads, &engine.binary, &iwad_noext)?;
 
     let mut viddump_folder_name = vec![];
@@ -304,18 +282,15 @@ fn run() -> Result<(), Error> {
         parse_extra_pwads(extra_pwads_raw, &mut pwads)?;
     }
 
-    if matches.is_present("vanilla-weapons") {
-        pwads.add_wads(search::search_file("vsmooth.wad", FileType::Pwad)?);
-        pwads.add_dehs(search::search_file("vsmooth.deh", FileType::Pwad)?);
-    }
-
-    if matches.is_present("3p") {
-        let sound_pack = search::search_file("3P Sound Pack.wad", FileType::Pwad)?;
-        pwads.add_wad(&sound_pack[0]);
-    }
-
     if !pwads.wads().is_empty() {
-        cmdline.push_line(Line::from_word("-file", 1));
+        cmdline.push_line(Line::from_word(
+            if engine.use_merge_arg {
+                "-merge"
+            } else {
+                "-file"
+            },
+            1,
+        ));
         pwads.wads().iter().try_for_each(|pwad| {
             pwad.to_str()
                 .ok_or_else(|| Error::NonUtf8Path(pwad.to_string_lossy().into_owned()))
@@ -324,7 +299,13 @@ fn run() -> Result<(), Error> {
     }
 
     if !pwads.dehs().is_empty() {
-        cmdline.push_line(Line::from_word("-deh", 1));
+        if engine.use_merge_arg {
+            if pwads.wads().is_empty() {
+                cmdline.push_line(Line::from_word("-merge", 1));
+            }
+        } else {
+            cmdline.push_line(Line::from_word("-deh", 1));
+        }
         pwads.dehs().iter().try_for_each(|deh| {
             deh.to_str()
                 .ok_or_else(|| Error::NonUtf8Path(deh.to_string_lossy().into_owned()))

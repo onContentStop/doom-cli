@@ -28,10 +28,6 @@ impl Pwads {
         self.wads.push(wad.as_ref().to_owned());
     }
 
-    pub(crate) fn add_dehs(&mut self, mut dehs: Vec<PathBuf>) {
-        self.dehs.append(&mut dehs);
-    }
-
     pub(crate) fn add_deh(&mut self, deh: PathBuf) {
         self.dehs.push(deh);
     }
