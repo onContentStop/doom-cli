@@ -81,26 +81,8 @@ fn demo_dir() -> Result<PathBuf, Error> {
     doom_dir().map(|d| d.join("demo"))
 }
 
-#[cfg(unix)]
-fn dump_dir() -> PathBuf {
-    let raw_output = String::from_utf8(
-        Command::new("findmnt")
-            .arg("/dev/sdb1")
-            .output()
-            .unwrap()
-            .stdout,
-    )
-    .unwrap();
-    let second_line = raw_output.lines().nth(1).unwrap_or_else(|| {
-        error!("Please mount /dev/sdb1. I beg you.");
-        exit(-1);
-    });
-    second_line.split_whitespace().next().unwrap().into()
-}
-
-#[cfg(windows)]
-fn dump_dir() -> PathBuf {
-    PathBuf::from("E:").join("Videos")
+fn dump_dir() -> Result<PathBuf, Error> {
+    doom_dir().map(|d| d.join("demo").join("render"))
 }
 
 fn select_between<P: AsRef<Path>>(
@@ -451,8 +433,7 @@ fn run() -> Result<(), Error> {
 
     println!();
     if let Some(render_matches) = matches.value_of("render") {
-        let dump_dir = dump_dir()
-            .join("Videos")
+        let dump_dir = dump_dir()?
             .join(iwad_base)
             .join(viddump_folder_name.join(","));
         let renderings = render::collect_renderings(render_matches, &dump_dir)?;
