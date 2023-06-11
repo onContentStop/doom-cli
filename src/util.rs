@@ -1,4 +1,4 @@
-use path_clean::PathClean;
+use normpath::PathExt;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -11,7 +11,11 @@ pub(crate) fn absolute_path(path: impl AsRef<Path>) -> Result<PathBuf, Error> {
     let absolute_path = if path.is_absolute() {
         path.to_path_buf()
     } else {
-        doom_dir()?.join(path).clean()
+        doom_dir()?
+            .join(path)
+            .normalize()
+            .map_err(Error::Io)?
+            .into()
     };
 
     Ok(absolute_path)

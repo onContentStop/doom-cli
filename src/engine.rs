@@ -97,7 +97,7 @@ impl KnownEngines {
         Some(&self.engines[index])
     }
 
-    pub fn iter(&'_ self) -> KnownEnginesIterator {
+    pub fn iter(&self) -> KnownEnginesIterator {
         let engines = self.engines.clone();
         KnownEnginesIterator {
             iter: Box::new(
@@ -134,7 +134,8 @@ pub(crate) fn read_known_engines() -> Result<KnownEngines, Error> {
     let engines: HashMap<String, DoomEngine> = engines
         .into_iter()
         .map(|(name, mut engine)| {
-            absolute_path(engine.binary.clone()).map(|binary| {
+            absolute_path(&engine.binary).map(|binary| {
+                // normalize
                 engine.binary = binary;
                 (name, engine)
             })

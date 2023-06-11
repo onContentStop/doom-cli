@@ -43,7 +43,7 @@ pub(crate) fn collect_renderings(matches: &str, dump_dir: &Path) -> Result<Vec<J
             let video_name = if dump_dir.exists() {
                 Ok(())
             } else {
-                create_dir_all(&dump_dir).map_err(Error::Io)
+                create_dir_all(dump_dir).map_err(Error::Io)
             }
             .and_then(|_| {
                 demo_name

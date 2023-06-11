@@ -1,6 +1,6 @@
 [package]
 name = "playdoom"
-version = "0.7.2"
+version = "0.7.3"
 authors = ["Kyle Coffey <me@phytolizer.dev>"]
 edition = "2021"
 
@@ -15,7 +15,6 @@ serde = { version = "1.0.164", features = ["derive"] }
 anyhow = "1.0.71"
 ctrlc = "3.4.0"
 dialoguer = "0.10.4"
-path-clean = "0.1.0"
 indoc = "1.0.9"
 thiserror = "1.0.40"
 pretty_env_logger = "0.4.0"
@@ -23,3 +22,4 @@ log = "0.4.18"
 tokio = { version = "1.28.2", features = ["full"] }
 indicatif = "0.17.5"
 ron = "0.8.0"
+normpath = "1.1.1"

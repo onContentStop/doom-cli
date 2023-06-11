@@ -18,7 +18,7 @@ impl CommandLine {
     }
 
     pub fn iter_words(&self) -> impl Iterator<Item = &str> {
-        self.lines.iter().map(|line| line.iter()).flatten()
+        self.lines.iter().flat_map(|line| line.iter())
     }
 
     pub fn iter_lines(&self) -> impl Iterator<Item = &Line> {
