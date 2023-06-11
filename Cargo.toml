@@ -1,6 +1,6 @@
 [package]
 name = "playdoom"
-version = "0.6.3"
+version = "0.6.4"
 authors = ["kyle.coffey <kyle.coffey@tamu.edu>"]
 edition = "2021"
 
