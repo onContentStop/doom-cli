@@ -5,11 +5,6 @@ use std::path::PathBuf;
 use crate::doom_dir;
 use crate::error::Error;
 
-#[cfg(not(windows))]
-fn fix_slashes(path: PathBuf) -> PathBuf {
-    path
-}
-
 #[cfg(windows)]
 fn fix_slashes(path: impl AsRef<Path>) -> PathBuf {
     use std::{ffi::OsString, os::windows::prelude::OsStrExt, os::windows::prelude::OsStringExt};
@@ -43,5 +38,9 @@ pub(crate) fn absolute_path(path: impl AsRef<Path>) -> Result<PathBuf, Error> {
             .into()
     };
 
-    Ok(fix_slashes(absolute_path))
+    if cfg!(windows) {
+        Ok(fix_slashes(absolute_path))
+    } else {
+        Ok(absolute_path)
+    }
 }
