@@ -38,9 +38,12 @@ pub(crate) fn absolute_path(path: impl AsRef<Path>) -> Result<PathBuf, Error> {
             .into()
     };
 
-    if cfg!(windows) {
+    #[cfg(windows)]
+    {
         Ok(fix_slashes(absolute_path))
-    } else {
+    }
+    #[cfg(not(windows))]
+    {
         Ok(absolute_path)
     }
 }
