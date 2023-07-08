@@ -156,6 +156,7 @@ fn run() -> Result<(), Error> {
             .arg(Arg::new("record-from-to").long("record-from-to").number_of_values(2).help("Play back FROM, allowing you to rewrite its ending to TO").long_help("Play FROM. You are allowed to press the join key at any time to begin recording your inputs from the current frame. Whenever you quit the game, the final result will be written to TO.").value_names(&["FROM", "TO"]))
             .arg(Arg::new("render").short('R').long("render").help("Render a demo as a video").long_help("The video will be placed in /extra/Videos/{iwad}/{pwads}/{demoname}.").value_name("DEMO"))
             .arg(Arg::new("respawn").long("respawn").help("Enable respawning monsters"))
+            .arg(Arg::new("script").long("script").help("Generate a shell script").long_help("Generate a shell script that will run the same command as this program. Writes to stdout."))
             .arg(Arg::new("short-tics").long("short-tics").help("Play the game with short tics instead of long tics"))
             .arg(Arg::new("skill").short('s').long("skill").help("Set the game's skill level by a number").value_name("SKILL"))
             .arg(Arg::new("video-mode").short('v').long("video-mode").help("Set the video mode of the game (software, hardware)").long_help("Only supported on Boom-derived sourceports.").value_name("MODE"))
@@ -414,15 +415,23 @@ fn run() -> Result<(), Error> {
         }
     }
 
-    println!();
     if let Some(render_matches) = matches.value_of("render") {
         let dump_dir = dump_dir()?
             .join(iwad_base)
             .join(viddump_folder_name.join(","));
         let renderings = render::collect_renderings(render_matches, &dump_dir)?;
         batch_render(renderings, &cmdline, dump_dir)?;
-    } else {
+    } else if matches.is_present("script") {
         println!(
+            "{}",
+            cmdline
+                .iter_words()
+                .map(|w| shlex::quote(w.trim()))
+                .join(" ")
+        );
+    } else {
+        eprintln!();
+        eprintln!(
             "Command line: \n'\n{}\n'",
             cmdline.iter_lines().map(|l| l.iter().join(" ")).join("\n")
         );
