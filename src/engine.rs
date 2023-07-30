@@ -31,7 +31,7 @@ const EXAMPLE_ENGINES_FILE: &str = indoc!(
             // Optional, defaults to false.
             // If true, the launcher will use `-merge`, never `-file` nor `-deh`.
             // use_merge_arg: false,
-        ),
+        // ),
     }
     "#
 );
