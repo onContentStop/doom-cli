@@ -314,8 +314,7 @@ fn run() -> Result<(), Error> {
         })?;
     }
 
-    if [DoomEngineKind::Boom, DoomEngineKind::MBF].contains(&engine.kind) {
-        let complevel = matches.value_of("compatibility-level").unwrap_or("21");
+    if let Some(complevel) = matches.value_of("compatibility-level") {
         cmdline.push_line(Line::from_words(
             &[String::from("-complevel"), complevel.to_string()],
             1,
