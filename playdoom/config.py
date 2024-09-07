@@ -34,5 +34,5 @@ def init():
 
 
 def load():
-    with open(DIRS.user_config_path / "config.toml", "r") as f:
+    with open(DIRS.user_config_path / "config.toml", "rb") as f:
         return tomllib.load(f)

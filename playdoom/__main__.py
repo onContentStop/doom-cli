@@ -3,6 +3,9 @@ from . import config
 
 @click.command()
 def main():
-    config.init()
+    try:
+        print(config.load())
+    except IOError:
+        config.init()
 
 main()
